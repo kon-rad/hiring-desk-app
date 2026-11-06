@@ -1,5 +1,7 @@
 # Integration guide: Arc USDC payment module
 
+> The Argo Hiring Desk integration (public API client, production page, server-verified payments) is documented in [ARGO-INTEGRATION.md](ARGO-INTEGRATION.md). The HTTP contract in section 6 below is the generic example; Argo's routes there are canonical. Use `adapter.submit(...)` (sign and return the hash without waiting) when a server decides confirmation, and `<SettlementFlow mode="external">` in the UI.
+
 Generated in [Arc Studio](https://studio.arc.io). For the private Second Brain Hiring Desk. The module settles one payment per job. Job state, operator state, deliverables and the agent's wallet record stay in your application.
 
 ## 1. Requirements coverage
@@ -27,6 +29,7 @@ Functions:
 | --- | --- |
 | `createSettlementAdapter({ publicClient, ledger?, receiptTimeoutMs? })` | Browser. Returns `{ preflight, settle, verify, resume, abandon }` |
 | `adapter.settle(request, walletClient, { onProgress? })` | Runs the payment. Never throws. Resolves to `SettlementOutcome` |
+| `adapter.submit(request, walletClient, { onProgress? })` | Signs and submits, returns `{ status: 'submitted', txHash }` or a failure. Does not wait. Never throws |
 | `adapter.preflight(request, walletClient)` | Optional pre-signing checks (network, token on chain, balance). Throws `SettlementError` |
 | `adapter.verify(request, txHash, expectedSender?)` | One-shot status of a known hash |
 | `adapter.resume(request)` | Re-checks a payment the ledger already knows (after a reload) |

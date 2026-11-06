@@ -36,3 +36,10 @@ The settlement module no longer imports Studio helper files. `config.ts` holds l
 ## Not Studio-generated
 
 The Hiring Desk job lifecycle, database and deliverable storage. They stay in your application.
+
+## Argo integration (2026-11-06)
+
+Added in Studio on top of the existing settlement module: `src/types/desk.ts`, `src/lib/hiring-desk-api.ts`, `src/lib/desk-job.ts`, `src/lib/route.ts`, `src/lib/desk-payment-controller.ts`, `src/hooks/useDeskPayment.ts`, `src/components/desk/*`, `src/components/settlement/ReviewDetails.tsx`, `src/demo/DemoPage.tsx`, `tests/desk.test.tsx`, `docs/ARGO-INTEGRATION.md`, `vercel.json`, `.env.example`. Edited: `src/settlement/adapter.ts` (new `submit`), `src/hooks/useSettlement.ts`, `src/components/settlement/{SettlementFlow,ReviewCard,StatusPanels,types}.tsx`, `src/App.tsx`, `src/vite-env.d.ts`, `src/lib/settlementRuntime.ts`, README and docs.
+
+- Studio project URL: _paste from the Arc Studio address bar_ (the sandbox cannot read it).
+- Generated commit reference: _not available_. This sandbox copy has no git history. After you commit and push, record the commit SHA here.

@@ -14,7 +14,7 @@ import { type SettlementNetworkConfig } from './config'
 import { classifyError, SettlementError } from './errors'
 import { createKeyValueLedger, createMemoryStore, type SettlementLedger } from './ledger'
 import { normalizeRequest } from './request'
-import type { SettlementOutcome, SettlementPreflight, SettlementProgress, SettlementRequest } from './types'
+import type { SettlementOutcome, SettlementPreflight, SettlementProgress, SettlementRequest, SubmitOutcome } from './types'
 import { toFailed, verifySettlement } from './verify'
 
 export interface SettlementAdapterOptions {
@@ -34,6 +34,11 @@ export interface SettlementAdapter {
   preflight(request: SettlementRequest, wallet: WalletClient): Promise<SettlementPreflight>
   /** Runs the full payment. Never throws: always resolves to pending, confirmed or failed. */
   settle(request: SettlementRequest, wallet: WalletClient, options?: SettleOptions): Promise<SettlementOutcome>
+  /**
+   * Signs and submits the transfer, then returns the hash without waiting for confirmation.
+   * Use this when a server (not the browser) decides whether the payment is confirmed.
+   */
+  submit(request: SettlementRequest, wallet: WalletClient, options?: SettleOptions): Promise<SubmitOutcome>
   /** One-shot status check of a known transaction. */
   verify(request: SettlementRequest, txHash: Hash, expectedSender?: Address): Promise<SettlementOutcome>
   /** Re-checks a payment this ledger already knows about (for example after a page reload). */
@@ -131,81 +136,114 @@ export function createSettlementAdapter(options: SettlementAdapterOptions): Sett
     return outcome
   }
 
-  async function settle(input: SettlementRequest, wallet: WalletClient, settleOptions: SettleOptions = {}): Promise<SettlementOutcome> {
-    let txHash: Hash | null = null
-    let claimedJobKey: string | null = null
-    try {
-      const { request, config } = normalizeRequest(input)
+  interface Submitted {
+    request: SettlementRequest
+    config: SettlementNetworkConfig
+    txHash: Hash
+    sender: Address
+    resumed: boolean
+    ledgerWarning: string | null
+  }
 
-      if (inFlight.has(request.jobKey)) {
-        throw new SettlementError('ALREADY_PAID', 'A payment for this job is already being processed.')
-      }
-      inFlight.add(request.jobKey)
-      claimedJobKey = request.jobKey
+  /**
+   * Everything up to and including the wallet signature. Never waits for confirmation.
+   * If this browser already submitted a transfer for the job, that hash is returned instead of
+   * signing a second one (the local ledger is only a resume aid, not a record of payment).
+   */
+  async function submitTransfer(request: SettlementRequest, config: SettlementNetworkConfig, wallet: WalletClient, onProgress?: (p: SettlementProgress) => void): Promise<Submitted> {
+    const existing = await ledger.get(request.jobKey)
+    if (existing && existing.status !== 'failed') {
+      return { request, config, txHash: existing.txHash, sender: existing.sender, resumed: true, ledgerWarning: null }
+    }
 
-      const existing = await ledger.get(request.jobKey)
-      if (existing && existing.status !== 'failed') {
-        // Never submit a second transfer: re-check the one we already know about.
-        settleOptions.onProgress?.({ stage: 'confirming', txHash: existing.txHash })
-        return await waitAndVerify(request, config, existing.txHash, existing.sender)
-      }
+    const checks = await preflight(request, wallet)
+    const account = wallet.account
+    if (!account) throw new SettlementError('WALLET_NOT_CONNECTED', 'Connect your wallet to continue.', { retryable: true })
 
-      const checks = await preflight(request, wallet)
-      const account = wallet.account
-      if (!account) throw new SettlementError('WALLET_NOT_CONNECTED', 'Connect your wallet to continue.', { retryable: true })
+    // Dry run: surfaces blacklists, paused tokens and similar reverts before the user signs.
+    const simulation = await publicClient.simulateContract({
+      account,
+      address: config.token.address,
+      abi: erc20Abi,
+      functionName: 'transfer',
+      args: [request.recipientAddress, request.amountBaseUnits],
+    })
 
-      // Dry run: surfaces blacklists, paused tokens and similar reverts before the user signs.
-      const simulation = await publicClient.simulateContract({
+    // On Arc the network fee is paid from the same USDC pool, so amount + fee must fit the balance.
+    const [gas, gasPrice] = await Promise.all([
+      publicClient.estimateContractGas({
         account,
         address: config.token.address,
         abi: erc20Abi,
         functionName: 'transfer',
         args: [request.recipientAddress, request.amountBaseUnits],
+      }),
+      publicClient.getGasPrice(),
+    ])
+    const fee = gas * gasPrice
+    const needed = toNativeView(request.chainId, request.amountBaseUnits) + fee
+    if (toNativeView(request.chainId, checks.senderBalance) < needed) {
+      throw new SettlementError('INSUFFICIENT_FUNDS', 'Your wallet cannot cover this payment plus the network fee, which is paid in the same USDC balance.', {
+        retryable: true,
+        details: { balance: checks.senderBalance.toString(), required: request.amountBaseUnits.toString(), estimatedFeeNative18: fee.toString() },
       })
+    }
 
-      // On Arc the network fee is paid from the same USDC pool, so amount + fee must fit the balance.
-      const [gas, gasPrice] = await Promise.all([
-        publicClient.estimateContractGas({
-          account,
-          address: config.token.address,
-          abi: erc20Abi,
-          functionName: 'transfer',
-          args: [request.recipientAddress, request.amountBaseUnits],
-        }),
-        publicClient.getGasPrice(),
-      ])
-      const fee = gas * gasPrice
-      const needed = toNativeView(request.chainId, request.amountBaseUnits) + fee
-      if (toNativeView(request.chainId, checks.senderBalance) < needed) {
-        throw new SettlementError('INSUFFICIENT_FUNDS', 'Your wallet cannot cover this payment plus the network fee, which is paid in the same USDC balance.', {
-          retryable: true,
-          details: { balance: checks.senderBalance.toString(), required: request.amountBaseUnits.toString(), estimatedFeeNative18: fee.toString() },
-        })
-      }
+    onProgress?.({ stage: 'awaiting_signature' })
+    const txHash = await wallet.writeContract(simulation.request)
 
-      settleOptions.onProgress?.({ stage: 'awaiting_signature' })
-      txHash = await wallet.writeContract(simulation.request)
+    let ledgerWarning: string | null = null
+    try {
+      await ledger.markSubmitted({ jobKey: request.jobKey, chainId: request.chainId, txHash, sender: account.address })
+    } catch (error) {
+      ledgerWarning = classifyError(error).message
+    }
+    return { request, config, txHash, sender: account.address, resumed: false, ledgerWarning }
+  }
 
-      let ledgerWarning: string | null = null
-      try {
-        await ledger.markSubmitted({ jobKey: request.jobKey, chainId: request.chainId, txHash, sender: account.address })
-      } catch (error) {
-        ledgerWarning = classifyError(error).message
-      }
+  /** Runs `work` while holding a per-job lock, so one browser never signs two transfers for a job at once. */
+  async function withJobLock<T>(jobKey: string, work: () => Promise<T>): Promise<T> {
+    if (inFlight.has(jobKey)) throw new SettlementError('ALREADY_PAID', 'A payment for this job is already being processed.')
+    inFlight.add(jobKey)
+    try {
+      return await work()
+    } finally {
+      inFlight.delete(jobKey)
+    }
+  }
 
-      settleOptions.onProgress?.({ stage: 'confirming', txHash })
-      const outcome = await waitAndVerify(request, config, txHash, account.address)
-      return outcome.status === 'pending' && ledgerWarning && !outcome.warning ? { ...outcome, warning: ledgerWarning } : outcome
+  async function settle(input: SettlementRequest, wallet: WalletClient, settleOptions: SettleOptions = {}): Promise<SettlementOutcome> {
+    let txHash: Hash | null = null
+    try {
+      const { request, config } = normalizeRequest(input)
+      return await withJobLock(request.jobKey, async () => {
+        const sub = await submitTransfer(request, config, wallet, settleOptions.onProgress)
+        txHash = sub.txHash
+        settleOptions.onProgress?.({ stage: 'confirming', txHash: sub.txHash })
+        const outcome = await waitAndVerify(request, config, sub.txHash, sub.sender)
+        return outcome.status === 'pending' && sub.ledgerWarning && !outcome.warning ? { ...outcome, warning: sub.ledgerWarning } : outcome
+      })
     } catch (error) {
       return toFailed(error, input.jobKey, input.chainId, txHash)
-    } finally {
-      if (claimedJobKey) inFlight.delete(claimedJobKey)
+    }
+  }
+
+  async function submit(input: SettlementRequest, wallet: WalletClient, submitOptions: SettleOptions = {}): Promise<SubmitOutcome> {
+    try {
+      const { request, config } = normalizeRequest(input)
+      return await withJobLock(request.jobKey, async () => {
+        const sub = await submitTransfer(request, config, wallet, submitOptions.onProgress)
+        return { status: 'submitted' as const, jobKey: request.jobKey, chainId: request.chainId, txHash: sub.txHash, sender: sub.sender, resumed: sub.resumed }
+      })
+    } catch (error) {
+      return toFailed(error, input.jobKey, input.chainId, null)
     }
   }
 
   return {
     preflight,
     settle,
+    submit,
     verify: (input, txHash, expectedSender) => verifySettlement(publicClient, input, txHash, { expectedSender, ledger }),
     async resume(input, resumeOptions = {}) {
       try {

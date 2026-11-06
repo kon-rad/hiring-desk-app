@@ -1,6 +1,6 @@
 /** Generated in Arc Studio. */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { erc20Abi } from 'viem'
+import { erc20Abi, type Hash } from 'viem'
 import { arcTestnet } from 'viem/chains'
 import { useAccount, useReadContract, useSwitchChain, useWalletClient } from 'wagmi'
 import type { SettlementJob, SettlementPhase } from '@/components/settlement/types'
@@ -9,8 +9,17 @@ import type { ConfirmedSettlement, SettlementOutcome, SettlementProgress, Settle
 import { classifyError } from '@/settlement'
 
 interface UseSettlementOptions {
+  /**
+   * 'self' (demo): the browser waits for the receipt and reports confirmed itself.
+   * 'external': the browser only signs and submits, then hands the hash to `onSubmitted`.
+   * A server decides whether the payment is confirmed; this hook never reports paid.
+   */
+  mode?: 'self' | 'external'
   onSettled?: (settlement: ConfirmedSettlement) => void
+  onSubmitted?: (txHash: Hash) => void
 }
+
+const sameAddress = (a?: string, b?: string): boolean => Boolean(a && b && a.toLowerCase() === b.toLowerCase())
 
 /** Glue between wagmi (wallet) and the framework-free settlement adapter. Holds no payment logic. */
 export function useSettlement(job: SettlementJob, options: UseSettlementOptions = {}) {
@@ -22,10 +31,16 @@ export function useSettlement(job: SettlementJob, options: UseSettlementOptions 
   const [progress, setProgress] = useState<SettlementProgress | null>(null)
   const [busy, setBusy] = useState(false)
   const [switchError, setSwitchError] = useState<string | null>(null)
+  const [submittedHash, setSubmittedHash] = useState<Hash | null>(null)
+  const external = options.mode === 'external'
   const onSettledRef = useRef(options.onSettled)
+  const onSubmittedRef = useRef(options.onSubmitted)
   useEffect(() => {
     onSettledRef.current = options.onSettled
+    onSubmittedRef.current = options.onSubmitted
   })
+
+  const wrongClient = isConnected && Boolean(job.clientAddress) && !sameAddress(address, job.clientAddress)
 
   const request: SettlementRequest = useMemo(
     () => ({
@@ -54,6 +69,7 @@ export function useSettlement(job: SettlementJob, options: UseSettlementOptions 
 
   // A reload must never lose track of a payment that was already submitted.
   useEffect(() => {
+    if (external) return
     let cancelled = false
     void settlementAdapter.resume(request, { onProgress: (p) => !cancelled && setProgress(p) }).then((resumed) => {
       if (!cancelled && resumed) accept(resumed)
@@ -61,18 +77,30 @@ export function useSettlement(job: SettlementJob, options: UseSettlementOptions 
     return () => {
       cancelled = true
     }
-  }, [request, accept])
+  }, [request, accept, external])
 
   const pay = useCallback(async () => {
-    if (!walletClient) return
+    if (!walletClient || wrongClient) return
     setBusy(true)
     setOutcome(null)
     setProgress({ stage: 'awaiting_signature' })
+    if (external) {
+      const submitted = await settlementAdapter.submit(request, walletClient, { onProgress: setProgress })
+      if (submitted.status === 'submitted') {
+        setSubmittedHash(submitted.txHash)
+        onSubmittedRef.current?.(submitted.txHash)
+      } else {
+        setOutcome(submitted)
+      }
+      setProgress(null)
+      setBusy(false)
+      return
+    }
     const result = await settlementAdapter.settle(request, walletClient, { onProgress: setProgress })
     accept(result)
     setProgress(null)
     setBusy(false)
-  }, [walletClient, request, accept])
+  }, [walletClient, request, accept, external, wrongClient])
 
   const checkAgain = useCallback(async () => {
     setBusy(true)
@@ -103,7 +131,8 @@ export function useSettlement(job: SettlementJob, options: UseSettlementOptions 
   }, [switchChainAsync])
 
   let phase: SettlementPhase = 'review'
-  if (outcome?.status === 'confirmed') phase = 'confirmed'
+  if (submittedHash) phase = 'submitted'
+  else if (outcome?.status === 'confirmed') phase = 'confirmed'
   else if (outcome?.status === 'failed') phase = 'failed'
   else if (outcome?.status === 'pending' || progress?.stage === 'confirming') phase = 'pending'
   else if (busy) phase = 'signing'
@@ -115,6 +144,7 @@ export function useSettlement(job: SettlementJob, options: UseSettlementOptions 
     busy,
     isConnected,
     walletAddress: address,
+    wrongClient,
     wrongNetwork: isConnected && walletChainId !== job.chainId,
     walletChainId,
     switchNetwork,

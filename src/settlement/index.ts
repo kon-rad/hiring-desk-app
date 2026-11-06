@@ -38,5 +38,6 @@ export type {
   SettlementPreflight,
   SettlementProgress,
   SettlementRequest,
+  SubmitOutcome,
   TransferLogDetails,
 } from './types'

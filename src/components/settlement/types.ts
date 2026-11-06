@@ -11,10 +11,12 @@ export interface SettlementJob {
   recipientName: string
   /** The agent's verified payout wallet, from the Hiring Desk's own records. */
   recipientAddress: Address
+  /** If the host knows which client wallet must pay, the flow refuses any other connected wallet. */
+  clientAddress?: Address
   chainId: number
   tokenAddress: Address
   /** Exact amount in token base units. */
   amountBaseUnits: bigint
 }
 
-export type SettlementPhase = 'review' | 'signing' | 'pending' | 'confirmed' | 'failed'
+export type SettlementPhase = 'review' | 'signing' | 'submitted' | 'pending' | 'confirmed' | 'failed'

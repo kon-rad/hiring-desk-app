@@ -26,16 +26,35 @@ export function SigningPanel() {
   )
 }
 
+export function SubmittedPanel() {
+  return (
+    <Card>
+      <div className="flex items-center gap-3" role="status" aria-live="polite">
+        <Loader2 className="animate-spin text-navy" size={26} />
+        <div>
+          <h2 className="font-display text-xl font-semibold">Transaction submitted</h2>
+          <p className="text-sm text-ink/65">Sending the transaction hash to the Hiring Desk for verification.</p>
+        </div>
+      </div>
+    </Card>
+  )
+}
+
 interface PendingProps {
   pending: PendingSettlement | null
   txHash?: string
   chainId: number
   busy: boolean
   onCheckAgain: () => void
-  onAbandon: () => void
+  /** Omit to hide the local release button (server-controlled flows). */
+  onAbandon?: () => void
+  /** Replaces the default "submitted" copy. */
+  description?: string
+  /** Overrides pending.warning (used when the warning comes from the server). */
+  warning?: string | null
 }
 
-export function PendingPanel({ pending, txHash, chainId, busy, onCheckAgain, onAbandon }: PendingProps) {
+export function PendingPanel({ pending, txHash, chainId, busy, onCheckAgain, onAbandon, description, warning }: PendingProps) {
   const config = getNetworkConfig(chainId)
   const hash = pending?.txHash ?? txHash
   return (
@@ -45,7 +64,7 @@ export function PendingPanel({ pending, txHash, chainId, busy, onCheckAgain, onA
         <div className="min-w-0">
           <h2 className="font-display text-xl font-semibold">Waiting for confirmation</h2>
           <p className="text-sm text-ink/65">
-            The payment was submitted. It counts as paid only after the network confirms it and the receipt matches this job.
+            {description ?? 'The payment was submitted. It counts as paid only after the network confirms it and the receipt matches this job.'}
           </p>
         </div>
       </div>
@@ -56,15 +75,16 @@ export function PendingPanel({ pending, txHash, chainId, busy, onCheckAgain, onA
           </Row>
         </dl>
       ) : null}
-      {pending?.warning ? (
+      {(warning ?? pending?.warning) ? (
         <p role="alert" className="mt-3 flex items-start gap-2 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          <AlertTriangle size={16} className="mt-0.5 shrink-0" /> {pending.warning}
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" /> {warning ?? pending?.warning}
         </p>
       ) : null}
       <div className="mt-5 flex flex-wrap gap-3">
         <GhostButton onClick={onCheckAgain} disabled={busy}>
           <RefreshCw size={16} className={busy ? 'animate-spin' : ''} /> Check again
         </GhostButton>
+        {onAbandon ? (
         <GhostButton
           onClick={() => {
             if (window.confirm('Only do this if the transaction is dropped or missing on the explorer. If it later confirms, the job could be paid twice. Continue?')) onAbandon()
@@ -73,6 +93,7 @@ export function PendingPanel({ pending, txHash, chainId, busy, onCheckAgain, onA
         >
           Release stuck payment
         </GhostButton>
+        ) : null}
       </div>
     </Card>
   )

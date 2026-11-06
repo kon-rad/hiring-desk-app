@@ -12,6 +12,12 @@ Built with [Arc Studio](https://studio.arc.io)
 - Returns the transaction hash and the verified transfer details once confirmed.
 - The Hiring Desk keeps owning jobs and deliverables. This module only settles the payment.
 
+## Argo Hiring Desk integration
+
+This app is a public client for the Argo Hiring Desk. The job page loads the accepted job's payment terms from Argo's public API and shows them for review. The client's wallet signs one ERC-20 USDC transfer. The browser then sends only the transaction hash to Argo. **Argo independently verifies every payment and owns durable payment state and duplicate protection.** The page shows Paid only after Argo returns a confirmed, server-verified result, and reloads its state from Argo.
+
+Routes expected from Argo: `GET /jobs/:ref/payment`, `POST /jobs/:ref/payments/verify`, `POST /jobs/:ref/payments/reconcile`. Full contract: [docs/ARGO-INTEGRATION.md](docs/ARGO-INTEGRATION.md). No RPC provider URL, database URL, private key or operator credential belongs in this repository or in Vercel for this app.
+
 ## Tech stack
 
 React, Vite, TypeScript, Tailwind CSS, wagmi, viem, ConnectKit. Arc Testnet (chain ID 5042002) with ERC-20 USDC.
@@ -27,11 +33,17 @@ bun run check    # lint + typecheck
 bun run test     # unit tests for the settlement module
 ```
 
-Environment variables: None.
+Environment variables:
+
+| Name | Purpose |
+| --- | --- |
+| `VITE_HIRING_DESK_API_URL` | Public base URL of the Argo Hiring Desk API (https in production, no trailing slash). Set it in Vercel for Preview and Production. Public value only; never put a secret in a `VITE_` variable. |
+
+Copy `.env.example` to `.env` for local development. Open `/jobs/<job reference>` to load a job from Argo. In development only, `/?demo=1` opens a demo form with a user-entered recipient and amount; it is removed from production builds.
 
 To try the flow, connect a wallet on Arc Testnet and fund it with test USDC, then enter a job in the demo form.
 
-## Integrate into an existing TypeScript/Node app
+## Reusing the settlement module in another TypeScript/Node app
 
 All payment logic lives in `src/settlement/` and has no React dependency. The UI in `src/components/settlement/` is optional.
 
@@ -90,6 +102,7 @@ A confirmed outcome has `txHash`, `status`, `sender`, `recipient`, `transferredA
 
 ## Documentation
 
+- [docs/ARGO-INTEGRATION.md](docs/ARGO-INTEGRATION.md): Vercel variable, public API contract, what Argo owns
 - [docs/INTEGRATION.md](docs/INTEGRATION.md): exports, files, dependencies, API shape, job page example, assumptions
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): file map, states, security assumptions, diagram
 - [docs/SECURITY-REVIEW.md](docs/SECURITY-REVIEW.md): findings table

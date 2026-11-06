@@ -1,15 +1,17 @@
 /** Generated in Arc Studio. */
 import { ConnectKitButton } from 'connectkit'
-import { TokenUSDC } from '@web3icons/react'
-import { AlertTriangle, ExternalLink, Loader2, ShieldCheck } from 'lucide-react'
-import { explorerAddressUrl, formatBaseUnitsPadded, getNetworkConfig } from '@/settlement'
-import { Card, FullValue, PrimaryButton, Row } from './ui'
+import { AlertTriangle, Loader2, ShieldCheck } from 'lucide-react'
+import { formatBaseUnitsPadded, getNetworkConfig } from '@/settlement'
+import { ReviewDetails, isHttpsUrl } from './ReviewDetails'
+import { Card, PrimaryButton } from './ui'
 import type { SettlementJob } from './types'
 
 interface ReviewCardProps {
   job: SettlementJob
   isConnected: boolean
   walletAddress?: string
+  /** Connected wallet is not the client wallet this job requires. */
+  wrongClient?: boolean
   wrongNetwork: boolean
   walletChainId?: number
   balance?: bigint
@@ -19,14 +21,6 @@ interface ReviewCardProps {
   switchError: string | null
   onSwitch: () => void
   onPay: () => void
-}
-
-function isHttpsUrl(value: string): boolean {
-  try {
-    return new URL(value).protocol === 'https:'
-  } catch {
-    return false
-  }
 }
 
 export function ReviewCard(props: ReviewCardProps) {
@@ -39,6 +33,7 @@ export function ReviewCard(props: ReviewCardProps) {
   let blocker: string | null = null
   if (!deliverableOk) blocker = 'The deliverable is not available yet, so payment is disabled.'
   else if (!props.isConnected) blocker = null
+  else if (props.wrongClient) blocker = `This job must be paid from the client wallet ${job.clientAddress ?? ''}. Switch accounts in your wallet.`
   else if (props.wrongNetwork) blocker = `Your wallet is on chain ${props.walletChainId}. Switch to ${config.name} to continue.`
   else if (insufficient) blocker = `Your wallet holds ${formatBaseUnitsPadded(job.chainId, props.balance ?? 0n)} ${config.token.symbol}. You need at least ${amount} plus the network fee.`
 
@@ -51,57 +46,7 @@ export function ReviewCard(props: ReviewCardProps) {
         </span>
       </div>
 
-      <div className="mt-5 flex items-center gap-3 rounded-2xl bg-canvas px-4 py-4">
-        <TokenUSDC variant="branded" size={36} />
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-ink/55">Exact amount</p>
-          <p className="font-display text-3xl font-semibold tracking-[-0.03em] tabular-nums">
-            {amount} <span className="text-xl text-ink/60">{config.token.symbol}</span>
-          </p>
-        </div>
-      </div>
-
-      <dl className="mt-3 divide-y divide-ink/10">
-        <Row label="Job reference">
-          <span className="font-semibold">{job.jobReference}</span>
-        </Row>
-        <Row label="Deliverable">
-          {deliverableOk ? (
-            <a href={job.deliverableUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-start gap-1.5 break-all font-medium text-navy underline underline-offset-2">
-              {job.deliverableUrl} <ExternalLink size={14} className="mt-1 shrink-0" />
-            </a>
-          ) : (
-            <span className="text-red-700">No valid https link</span>
-          )}
-        </Row>
-        <Row label="Network">
-          {config.name} <span className="text-ink/55">· chain ID {config.chainId}</span>
-        </Row>
-        <Row label="Token">
-          <span className="mb-1 block font-semibold">{config.token.symbol} (ERC-20, {config.token.decimals} decimals)</span>
-          <FullValue value={job.tokenAddress} href={explorerAddressUrl(config, job.tokenAddress)} />
-        </Row>
-        <Row label="Recipient">
-          <span className="mb-1 block font-semibold">{job.recipientName}</span>
-          <FullValue value={job.recipientAddress} href={explorerAddressUrl(config, job.recipientAddress)} />
-        </Row>
-        <Row label="Connected wallet">
-          {props.walletAddress ? (
-            <>
-              <FullValue value={props.walletAddress} href={explorerAddressUrl(config, props.walletAddress)} />
-              {props.balance !== undefined ? (
-                <span className="mt-1 block text-xs text-ink/60 tabular-nums">
-                  Balance {formatBaseUnitsPadded(job.chainId, props.balance)} {config.token.symbol}
-                </span>
-              ) : props.balanceError ? (
-                <span className="mt-1 block text-xs text-red-700">Could not read your balance.</span>
-              ) : null}
-            </>
-          ) : (
-            <span className="text-ink/60">No wallet connected</span>
-          )}
-        </Row>
-      </dl>
+      <ReviewDetails job={job} walletAddress={props.walletAddress} balance={props.balance} balanceError={props.balanceError} />
 
       {blocker ? (
         <p role="alert" className="mt-4 flex items-start gap-2 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-900">

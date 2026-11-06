@@ -1,8 +1,9 @@
 /** Generated in Arc Studio. */
+import type { Hash } from 'viem'
 import { useSettlement } from '@/hooks/useSettlement'
 import { toPaymentReceipt, type PaymentReceipt } from '@/settlement'
 import { ReviewCard } from './ReviewCard'
-import { ConfirmedPanel, FailedPanel, PendingPanel, SigningPanel } from './StatusPanels'
+import { ConfirmedPanel, FailedPanel, PendingPanel, SigningPanel, SubmittedPanel } from './StatusPanels'
 import type { SettlementJob } from './types'
 
 interface SettlementFlowProps {
@@ -12,15 +13,28 @@ interface SettlementFlowProps {
    * the host must still verify the txHash on its server before it marks the job paid.
    */
   onPaymentConfirmed?: (receipt: PaymentReceipt) => void
+  /**
+   * 'self' (default, demo): this component waits for the receipt and shows "confirmed" itself.
+   * 'external': it only signs and submits, then calls `onTransactionSubmitted`. The host shows
+   * pending and paid from its own server's verdict.
+   */
+  mode?: 'self' | 'external'
+  onTransactionSubmitted?: (txHash: Hash) => void
 }
 
 /** Drop-in payment step: review -> signing -> pending -> confirmed | failed. */
-export function SettlementFlow({ job, onPaymentConfirmed }: SettlementFlowProps) {
-  const s = useSettlement(job, { onSettled: (settlement) => onPaymentConfirmed?.(toPaymentReceipt(settlement)) })
+export function SettlementFlow({ job, onPaymentConfirmed, mode = 'self', onTransactionSubmitted }: SettlementFlowProps) {
+  const s = useSettlement(job, {
+    mode,
+    onSettled: (settlement) => onPaymentConfirmed?.(toPaymentReceipt(settlement)),
+    onSubmitted: onTransactionSubmitted,
+  })
 
   switch (s.phase) {
     case 'signing':
       return <SigningPanel />
+    case 'submitted':
+      return <SubmittedPanel />
     case 'pending':
       return (
         <PendingPanel
@@ -42,6 +56,7 @@ export function SettlementFlow({ job, onPaymentConfirmed }: SettlementFlowProps)
           job={job}
           isConnected={s.isConnected}
           walletAddress={s.walletAddress}
+          wrongClient={s.wrongClient}
           wrongNetwork={s.wrongNetwork}
           walletChainId={s.walletChainId}
           balance={s.balance}

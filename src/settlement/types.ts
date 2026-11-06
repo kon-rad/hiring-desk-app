@@ -105,6 +105,11 @@ export interface FailedSettlement {
 
 export type SettlementOutcome = PendingSettlement | ConfirmedSettlement | FailedSettlement
 
+/** Result of signing and submitting without waiting for confirmation. */
+export type SubmitOutcome =
+  | { status: 'submitted'; jobKey: string; chainId: number; txHash: Hash; sender: Address; resumed: boolean }
+  | FailedSettlement
+
 /** Result of the checks that run before the wallet is asked to sign. */
 export interface SettlementPreflight {
   senderBalance: bigint
