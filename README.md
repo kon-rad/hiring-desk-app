@@ -41,6 +41,8 @@ Environment variables:
 
 Copy `.env.example` to `.env` for local development. Open `/jobs/<job reference>` to load a job from Argo. In development only, `/?demo=1` opens a demo form with a user-entered recipient and amount; it is removed from production builds.
 
+`/akira` is a separate recording demo. Its job, operator approval, production and payment stages are local simulated states. The proof panel links five public files on Swarm and reads an `asset-proof` entity directly from Arkiv Rabdi to verify their references and hashes. The delivered stage plays a bundled copy of the 15-second MP4 with a link to its matching Swarm copy. This is asset linkage proof, not a client-signed Arkiv job or provider-signed delivery. The local vault records the transaction, references and readback checks in `Projects/devcon-2026/hiring-desk/swarm-asset-proof.md`.
+
 To try the flow, connect a wallet on Arc Testnet and fund it with test USDC, then enter a job in the demo form.
 
 ## Reusing the settlement module in another TypeScript/Node app
