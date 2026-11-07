@@ -165,6 +165,11 @@ export default function AkiraDirectoryDemo() {
                 </a>
               </div>
 
+              <a className="mt-3 block rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm hover:border-emerald-500" href={swarmUrl(swarmAssets.video.ref)} target="_blank" rel="noopener noreferrer">
+                <span className="flex items-center gap-1 font-semibold text-emerald-950">Watch Akira’s 15-second sample on Swarm <ExternalLink size={14} /></span>
+                <span className="mt-1 block break-all font-mono text-[11px] text-emerald-900/75">{swarmUrl(swarmAssets.video.ref)}</span>
+              </a>
+
               <div className="mt-5 rounded-2xl bg-canvas p-4">
                 <p className="text-xs font-semibold uppercase tracking-wide text-ink/55">Customer rating</p>
                 <p className="mt-1 font-medium">No reviews yet</p>
