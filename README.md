@@ -107,3 +107,7 @@ A confirmed outcome has `txHash`, `status`, `sender`, `recipient`, `transferredA
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): file map, states, security assumptions, diagram
 - [docs/SECURITY-REVIEW.md](docs/SECURITY-REVIEW.md): findings table
 - [docs/PROVENANCE.md](docs/PROVENANCE.md): what was generated in Arc Studio and the project link
+
+## Public hiring board
+
+The home page shows public job and offer review plus a public job draft form. Posting and acceptance remain explicitly unavailable until a reviewed public publication adapter is configured; they never create local fixture jobs. Existing payment routes and Studio settlement logic are preserved. See [Public lifecycle](docs/PUBLIC-LIFECYCLE.md) for adapter requirements, authority checks and remaining live prerequisites.

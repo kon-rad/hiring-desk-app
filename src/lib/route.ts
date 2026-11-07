@@ -3,7 +3,7 @@
  * Only the reference is read. Query parameters such as recipient or amount are ignored on purpose.
  */
 
-const JOB_REF = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
+const JOB_REF = /^[A-Za-z0-9][A-Za-z0-9._:-]*(?:\/[A-Za-z0-9][A-Za-z0-9._:-]*)?$/
 const PATH = /^\/(?:jobs|pay)\/([^/]+)\/?$/
 
 export function readJobRef(location: Pick<Location, 'pathname' | 'search'>): string | null {
@@ -18,5 +18,5 @@ export function readJobRef(location: Pick<Location, 'pathname' | 'search'>): str
   } else {
     candidate = new URLSearchParams(location.search).get('job')
   }
-  return candidate && JOB_REF.test(candidate) ? candidate : null
+  return candidate && candidate.length <= 128 && !candidate.includes('..') && JOB_REF.test(candidate) ? candidate : null
 }
