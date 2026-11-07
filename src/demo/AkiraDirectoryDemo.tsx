@@ -114,11 +114,6 @@ export default function AkiraDirectoryDemo() {
 
   return (
     <main className="mx-auto grid w-full max-w-5xl gap-5 px-4 pb-24 pt-4 sm:px-6">
-      <div className="flex items-center justify-between gap-3 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-        <span className="font-semibold">VIDEO DEMO · Simulated job flow</span>
-        <span className="hidden text-amber-900/75 sm:inline">No job is sent to the Hiring Desk and no job payment is made by this click-through flow.</span>
-      </div>
-
       <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950 sm:p-5">
         <div className="flex flex-wrap items-center gap-2 font-semibold"><ShieldCheck size={18} /> Live Swarm asset proof</div>
         <p className="mt-2 text-xs leading-5">These public demo files were uploaded to Swarm and fetched from a second gateway with matching SHA-256 hashes on 2026-11-07. The job request is a demonstration file; the click-through job below is still simulated. No Arkiv job or delivery entity is claimed here.</p>
