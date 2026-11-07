@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { ArrowLeft, ArrowRight, Check, ExternalLink, Film, Radio, ShieldCheck, Sparkles, Wallet } from 'lucide-react'
+import { ARC_PROOF, verifyArcProof } from './arcProof'
 
 type Stage = 'profile' | 'requested' | 'desk' | 'approved' | 'working' | 'delivered' | 'paid'
 
@@ -79,6 +80,7 @@ export default function AkiraDirectoryDemo() {
   const [brief, setBrief] = useState('')
   const [submittedBrief, setSubmittedBrief] = useState('')
   const [arkivProof, setArkivProof] = useState<'checking' | 'verified' | 'unavailable'>('checking')
+  const [arcProof, setArcProof] = useState<{ blockNumber: number; confirmations: number; logIndex: number } | null | 'unavailable'>(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -86,6 +88,12 @@ export default function AkiraDirectoryDemo() {
       if (!controller.signal.aborted) setArkivProof('unavailable')
     })
     return () => controller.abort()
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    verifyArcProof().then((proof) => { if (active) setArcProof(proof) }).catch(() => { if (active) setArcProof('unavailable') })
+    return () => { active = false }
   }, [])
 
   function submitRequest(event: FormEvent<HTMLFormElement>) {
@@ -108,7 +116,7 @@ export default function AkiraDirectoryDemo() {
     <main className="mx-auto grid w-full max-w-5xl gap-5 px-4 pb-24 pt-4 sm:px-6">
       <div className="flex items-center justify-between gap-3 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
         <span className="font-semibold">VIDEO DEMO · Simulated job flow</span>
-        <span className="hidden text-amber-900/75 sm:inline">No job is sent to the Hiring Desk and no payment is made.</span>
+        <span className="hidden text-amber-900/75 sm:inline">No job is sent to the Hiring Desk and no job payment is made by this click-through flow.</span>
       </div>
 
       <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950 sm:p-5">
@@ -129,6 +137,15 @@ export default function AkiraDirectoryDemo() {
         <p className="mt-2 break-all font-mono text-[10px]">Entity {ARKIV_ENTITY}</p>
         <a className="mt-2 inline-flex items-center gap-1 font-semibold underline" href={`https://rabdi.explorer.arkiv.network/tx/${ARKIV_TX}`} target="_blank" rel="noopener noreferrer">View transaction <ExternalLink size={13} /></a>
         <p className="mt-2 text-xs text-indigo-900/75">This asset-proof entity is not a client-signed job, claim, or delivery record. The job flow below remains simulated.</p>
+      </section>
+
+      <section className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950 sm:p-5">
+        <p className="flex items-center gap-2 font-semibold"><ShieldCheck size={18} /> Arc Testnet USDC transfer</p>
+        <p className="mt-2 text-xs leading-5">{arcProof === null ? 'Checking the Arc Testnet receipt and USDC Transfer event…' : arcProof === 'unavailable' ? 'Live Arc read unavailable or mismatched. Open the explorer transaction and retry later.' : `Live receipt verified: ${ARC_PROOF.amountUSDC} test USDC moved in block ${arcProof.blockNumber}, Transfer log ${arcProof.logIndex}, with ${arcProof.confirmations} confirmations at the time of this check.`}</p>
+        <p className="mt-2 break-all font-mono text-[10px]">From {ARC_PROOF.sender}</p>
+        <p className="mt-1 break-all font-mono text-[10px]">To {ARC_PROOF.recipient}</p>
+        <a className="mt-2 inline-flex items-center gap-1 font-semibold underline" href={ARC_PROOF.explorer} target="_blank" rel="noopener noreferrer">View Arc transaction <ExternalLink size={13} /></a>
+        <p className="mt-2 text-xs text-sky-900/75">This is a real test USDC transfer from Akira to a controlled demo wallet. It is not payment for the simulated $5 job and has not been allocated to a Hiring Desk job.</p>
       </section>
 
       {stage === 'profile' ? (

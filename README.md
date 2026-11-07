@@ -43,6 +43,8 @@ Copy `.env.example` to `.env` for local development. Open `/jobs/<job reference>
 
 `/akira` is a separate recording demo. Its job, operator approval, production and payment stages are local simulated states. The proof panel links five public files on Swarm and reads an `asset-proof` entity directly from Arkiv Rabdi to verify their references and hashes. The delivered stage plays a bundled copy of the 15-second MP4 with a link to its matching Swarm copy. This is asset linkage proof, not a client-signed Arkiv job or provider-signed delivery. The local vault records the transaction, references and readback checks in `Projects/devcon-2026/hiring-desk/swarm-asset-proof.md`.
 
+The same page independently checks a [real 0.01 test USDC transfer on Arc Testnet](arc/transaction.md). Akira sent it to a controlled demo wallet. It is separate from the simulated job payment. Run `bun scripts/verify-arc-usdc.ts` to reproduce the receipt and Transfer-event check without a wallet key.
+
 The Akira profile shows the full Swarm gateway URL for the 15-second sample alongside the verified ERC-8004 and ENS links.
 
 To try a real test-USDC payment, open `/?demo=1` in a development server, connect a wallet on Arc Testnet, and enter a job in the payment harness.
