@@ -4,6 +4,79 @@ A client-approved USDC payment step for an AI-agent hiring marketplace. The clie
 
 Built with [Arc Studio](https://studio.arc.io)
 
+## Target bounty
+
+🏆 **Arc Studio Continuity Track: Bring Your Project to Arc - $3,000**
+
+🆕 This prize is only available to Continuity Track participants. This submission targets that track; participant eligibility must be confirmed before submitting.
+
+- GitHub repository: https://github.com/kon-rad/hiring-desk-app
+- Shareable Arc Studio project URL: **required before submission**. Copy the actual project share URL from Studio into this README and [provenance](docs/PROVENANCE.md). The preview host is not a substitute.
+
+## Frontend and backend architecture
+
+```mermaid
+flowchart LR
+  subgraph Frontend["Frontend: Arc Studio React / Vite app"]
+    Board["Public jobs and offers"]
+    Review["Job review and payment UI"]
+    Client["Typed public API client"]
+    Settlement["wagmi / viem settlement module"]
+    Board --> Client
+    Review --> Client
+    Review --> Settlement
+  end
+  subgraph Backend["Backend: this repository"]
+    Gateway["Bun API gateway: server/app.ts"]
+    Health["GET /api/health"]
+    Gateway --- Health
+  end
+  subgraph Argo["External Argo backend"]
+    API["Public jobs / offers / payment API"]
+    State["Authoritative job and payment state"]
+    Verify["Independent receipt verification"]
+    API --> State
+    API --> Verify
+  end
+  Client -->|"HTTP /api/jobs/..."| Gateway
+  Gateway -->|"Allow-listed public requests"| API
+  Settlement -->|"Request signature"| Wallet["Client browser wallet"]
+  Wallet -->|"Signed USDC transfer"| Arc["Arc Testnet / USDC"]
+  Verify -->|"Read transaction and receipt"| Arc
+  Settlement -->|"Read chain and receipt"| Arc
+```
+
+The frontend owns review and wallet interaction. The backend included here is a minimal, stateless Bun HTTP service with no additional dependencies. It exposes health and forwards only public job reads and transaction-hash verification/reconciliation requests to a fixed Argo upstream. It strips cookies, limits payment request bodies, rejects extra payment fields, and times out upstream calls. It never signs, holds keys, invents jobs, or confirms payments itself. Argo remains the external backend responsible for durable state and independent payment verification. This service therefore requires a working Argo deployment for the full MVP.
+
+### Run frontend and backend together
+
+After `bun install`, use two terminals:
+
+```bash
+# Terminal 1: use the actual public Argo API base, including its path prefix
+HIRING_DESK_UPSTREAM=https://YOUR_ARGO_HOST/PUBLIC_API_BASE bun run dev:server
+
+# Terminal 2: route the existing frontend client through Vite to the backend
+VITE_HIRING_DESK_API_URL=http://localhost:5173/api bun run dev -- --port 5173 --strictPort
+
+# Health check
+curl http://localhost:5173/api/health
+```
+
+Expected health response: `{"service":"hiring-desk-gateway","status":"ok","paymentAuthority":"Argo"}`. Health proves the gateway is running, not that the upstream or chain is reachable. Open `/` for public reads or `/jobs/<reference>` for payment. `bun run start:server` starts the service without watching. It binds to loopback on port 3001 (`PORT` overrides it). For production, run behind an HTTPS reverse proxy routing `/api/*` to the service and set `VITE_HIRING_DESK_API_URL` to that public HTTPS API URL. The Vite proxy is development-only; the existing static Vercel deployment does not automatically host this Bun service. Direct frontend-to-Argo configuration remains supported.
+
+### Qualification and demo checklist
+
+| Requirement | Evidence / remaining action |
+| --- | --- |
+| Built in Arc Studio | Existing Studio provenance in `docs/PROVENANCE.md`; add the actual shareable project URL and show Studio open in the recording. The gateway was added locally after the Studio build. |
+| Functional frontend and backend plus diagram | React frontend, Bun gateway, and diagram above. Demonstrate real job reads and a wallet payment against a working Argo upstream. Gateway tests use a mocked upstream, not live payment evidence. |
+| Video demonstration and presentation | Record a concise walkthrough: track and problem, open Studio project, public job review, wallet signing on Arc Testnet, transaction explorer, server-verified status after reload, then architecture and limitations. Add video and presentation links here before submission. |
+| Effective use of Arc and Circle tools | Show the implemented wallet-signed ERC-20 USDC settlement on Arc Testnet and independent verification. Installed Circle SDK packages alone are not evidence of an integrated Circle SDK feature. |
+| GitHub/Replit repository | https://github.com/kon-rad/hiring-desk-app |
+
+The `/akira` workflow is a simulated recording demo, not evidence of a live end-to-end hiring backend. Posting and acceptance are still unavailable as described in [Public lifecycle](docs/PUBLIC-LIFECYCLE.md). A recorded funded-wallet test, openable Studio URL, video, presentation, and eligibility confirmation remain submission prerequisites.
+
 ## What it does
 
 - Shows the job reference, deliverable link, exact USDC amount, network, token address, recipient name, full recipient wallet and the connected client wallet before signing.

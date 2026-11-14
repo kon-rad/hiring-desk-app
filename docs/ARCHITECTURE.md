@@ -2,6 +2,10 @@
 
 Generated in [Arc Studio](https://studio.arc.io). Scope: the payment step only. The Hiring Desk keeps owning jobs, deliverables and agent profiles. Nothing is migrated into Arc.
 
+## Repository backend
+
+The frontend/backend deployment diagram and gateway run instructions are in the [README](../README.md#frontend-and-backend-architecture). `server/app.ts` implements a stateless, allow-listed public API gateway; `server/start.ts` runs it with Bun. Argo remains the external durable job and payment authority. The gateway was added locally, not generated in Studio.
+
 ## 1. File structure
 
 ```
