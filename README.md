@@ -1,119 +1,76 @@
-# Hiring Desk: Arc USDC settlement
+# Cybazaar MVP
 
-A client-approved USDC payment step for an AI-agent hiring marketplace. The client reviews the job, signs one USDC transfer on Arc Testnet from their own wallet, and the app reports success only after the payment is confirmed and verified onchain.
+Cybazaar is a small wallet-authenticated hiring marketplace. Clients browse agent profiles, create and assign jobs, review submitted results, leave reviews, and sign one ERC-20 USDC transfer from their browser wallet. Agents publish profiles, accept assigned work, and submit inert text/JSON results or an HTTPS artifact reference. The server—not the browser—decides whether payment is confirmed.
 
-Built with [Arc Studio](https://studio.arc.io)
+## Run locally
 
-## What it does
-
-- Shows the job reference, deliverable link, exact USDC amount, network, token address, recipient name, full recipient wallet and the connected client wallet before signing.
-- The client's wallet signs. No private key is ever requested, stored or used by this project.
-- Handles pending, rejected, insufficient funds, wrong network, RPC failure and reverted payments with clear messages.
-- Returns the transaction hash and the verified transfer details once confirmed.
-- The Hiring Desk keeps owning jobs and deliverables. This module only settles the payment.
-
-## Argo Hiring Desk integration
-
-This app is a public client for the Argo Hiring Desk. The job page loads the accepted job's payment terms from Argo's public API and shows them for review. The client's wallet signs one ERC-20 USDC transfer. The browser then sends only the transaction hash to Argo. **Argo independently verifies every payment and owns durable payment state and duplicate protection.** The page shows Paid only after Argo returns a confirmed, server-verified result, and reloads its state from Argo.
-
-Routes expected from Argo: `GET /jobs/:ref/payment`, `POST /jobs/:ref/payments/verify`, `POST /jobs/:ref/payments/reconcile`. Full contract: [docs/ARGO-INTEGRATION.md](docs/ARGO-INTEGRATION.md). No RPC provider URL, database URL, private key or operator credential belongs in this repository or in Vercel for this app.
-
-## Tech stack
-
-React, Vite, TypeScript, Tailwind CSS, wagmi, viem, ConnectKit. Arc Testnet (chain ID 5042002) with ERC-20 USDC.
-
-## Development
-
-Prerequisites: [Bun](https://bun.sh) and a browser wallet.
+Prerequisites: Bun and an injected browser wallet.
 
 ```bash
 bun install
-bun run dev      # start the demo app
-bun run check    # lint + typecheck
-bun run test     # unit tests for the settlement module
+HIRING_DESK_DEV_MEMORY=1 bun run dev:server
+VITE_HIRING_DESK_API_URL=http://localhost:3001/api bun run dev
+bun run typecheck
+bun run build
+bun run test
 ```
 
-Environment variables:
+`HIRING_DESK_DEV_MEMORY=1` is an explicit ephemeral development mode. Restarting the server clears profiles, jobs, sessions, reviews, and payment bindings. It uses a Base RPC only to verify submitted hashes; set `BASE_RPC_URL` to a reliable read-only provider for live use. No test fixtures are loaded.
 
-| Name | Purpose |
-| --- | --- |
-| `VITE_HIRING_DESK_API_URL` | Public base URL of the Argo Hiring Desk API (https in production, no trailing slash). Set it in Vercel for Preview and Production. Public value only; never put a secret in a `VITE_` variable. |
+Production must set `HIRING_DESK_UPSTREAM=https://...` instead. The Bun service becomes an allow-listed facade over that durable authority and never falls back to memory or invented data. The upstream must implement the same authorization, lifecycle, uniqueness, and receipt-verification contract. Run it behind HTTPS so secure session cookies and wallet authentication have the expected transport boundary.
 
-Copy `.env.example` to `.env` for local development. Open `/jobs/<job reference>` to load a job from Argo. In development only, `/?demo=1` opens a demo form with a user-entered recipient and amount; it is removed from production builds.
+## API
 
-`/akira` is a separate recording demo. Its job, operator approval, production and payment stages are local simulated states. The proof panel links five public files on Swarm and reads an `asset-proof` entity directly from Arkiv Rabdi to verify their references and hashes. The delivered stage plays a bundled copy of the 15-second MP4 with a link to its matching Swarm copy. This is asset linkage proof, not a client-signed Arkiv job or provider-signed delivery. The local vault records the transaction, references and readback checks in `Projects/devcon-2026/hiring-desk/swarm-asset-proof.md`.
+Public routes:
 
-The same page independently checks a [real 0.01 test USDC transfer on Arc Testnet](arc/transaction.md). Akira sent it to a controlled demo wallet. It is separate from the simulated job payment. Run `bun scripts/verify-arc-usdc.ts` to reproduce the receipt and Transfer-event check without a wallet key.
+- `GET /api/health`
+- `GET /api/agents?q=` and `GET /api/agents/:address`
+- `GET /api/jobs?q=` returns available public summaries without parameters or results
 
-The Akira profile shows the full Swarm gateway URL for the 15-second sample alongside the verified ERC-8004 and ENS links.
+Authentication:
 
-To try a real test-USDC payment, open `/?demo=1` in a development server, connect a wallet on Arc Testnet, and enter a job in the payment harness.
+- `POST /api/auth/challenge` — `{ address, role: "client" | "agent" }`
+- `POST /api/auth/verify` — `{ address, role, nonce, signature }`
+- `GET /api/auth/session`
+- `POST /api/auth/logout`
 
-## Reusing the settlement module in another TypeScript/Node app
+The challenge binds the checksummed wallet, explicit role, random nonce, and five-minute expiry. A challenge is consumed before signature verification to stop races/replay. `viem.verifyMessage` verifies the signature. Successful verification creates a 15-minute opaque `HttpOnly; SameSite=Lax` cookie (`Secure` at the HTTPS authority). No private key enters this app.
 
-All payment logic lives in `src/settlement/` and has no React dependency. The UI in `src/components/settlement/` is optional.
+Authenticated lifecycle:
 
-1. Copy `src/settlement/`. It is self-contained and depends only on `viem`. See [docs/INTEGRATION.md](docs/INTEGRATION.md) for the exact exports, API shape and assumptions to change.
-2. Peer dependency: `viem`.
-3. Browser: create the adapter and call `settle` with the user's wallet client.
+- `PUT /api/profile` — agent profile and payout wallet
+- `POST /api/jobs` — client creates `{ skill, title, description, budgetBaseUnits, deadline, parameters }`
+- `GET /api/jobs/:id` — owning client or selected agent reads full request/result
+- `POST /api/jobs/:id/hire` — owning client selects `{ agentAddress }`
+- `POST /api/jobs/:id/claim` — selected agent accepts
+- `POST /api/jobs/:id/result` — selected agent submits `{ contentType, content, artifactUrl? }`
+- `POST /api/jobs/:id/reviews` — owning client submits `{ rating, comment }`
+- `GET /api/jobs/:id/payment` — owning client reads server-derived terms/status
+- `POST /api/jobs/:id/payments/verify` and `/reconcile` — body must contain only `{ txHash }`
 
-```ts
-import { createSettlementAdapter, createSettlementPublicClient } from './settlement'
+Job state is `open → hired → accepted → submitted → reviewed → paid` (payment is also allowed after submission, before review). Ownership, role, deadline, transition, string-size, JSON-size, content-type, and URL checks are server-side. Job descriptions, parameters, results, and reviews are untrusted data and are only rendered as inert text; they are never treated as model or operator instructions.
 
-const adapter = createSettlementAdapter({
-  publicClient: createSettlementPublicClient(5042002),
-  ledger: yourDurableLedger, // implement SettlementLedger on your database
-})
+## Base settlement
 
-const outcome = await adapter.settle(
-  {
-    chainId: 5042002,
-    tokenAddress: '0x3600000000000000000000000000000000000000',
-    recipientAddress: agent.verifiedWallet, // from YOUR records
-    amountBaseUnits: 25_000_000n,           // 25 USDC, exact base units
-    jobKey: job.id,
-  },
-  walletClient,
-)
-// outcome.status is 'pending' | 'confirmed' | 'failed'
-```
+The only enabled settlement network is Base Mainnet (chain ID `8453`). Payment configuration is centralized in `src/settlement/config.ts`:
 
-4. Server: never mark a job paid because the browser said so. Send the transaction hash to your backend and verify it there.
+- token: USDC
+- address: `0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48`
+- decimals: `6`
+- explorer: `https://basescan.org`
+- required confirmations: `2`
 
-```ts
-import { verifySettlement, createSettlementPublicClient } from './settlement'
+The wallet signs a direct `transfer(agentPayout, exactBudget)` call with zero native value. There is no escrow or native-ETH payment. The server reloads the job and agent profile, derives chain/token/sender/recipient/exact amount, and accepts only a successful receipt on chain 8453 with enough confirmations, direct token target, matching calldata, matching sender and exactly one matching `Transfer` log. A transaction hash is reserved to one job and each job to one hash before RPC verification. RPC failures remain pending; a browser response cannot mark a job paid.
 
-const outcome = await verifySettlement(createSettlementPublicClient(5042002), expectedRequestFromYourDb, txHash, {
-  expectedSender: job.clientWallet,
-  ledger: yourLedger,
-})
-if (outcome.status === 'confirmed') { /* mark paid, store outcome.txHash */ }
-```
+Important live prerequisite: independently confirm that the configured USDC address is the intended Base Mainnet token for your deployment and that it reports `USDC`/6 decimals. The adapter performs that metadata check before signing, so a mismatch fails closed.
 
-5. Back your ledger with `UNIQUE(job_key)` and `UNIQUE(tx_hash)` so one payment can never settle two jobs and one job can never be paid twice.
+## Security and limitations
 
-React users can drop in `<SettlementFlow job={...} onSettled={...} />`.
+- No keys, seed phrases, wallet secrets, RPC credentials, or database credentials belong in the repository or `VITE_` variables.
+- The development memory store is single-process, non-durable, and unsuitable for production concurrency.
+- Production uniqueness needs durable unique constraints on job ID and transaction hash at `HIRING_DESK_UPSTREAM`.
+- Direct payment has no escrow, dispute resolution, refund automation, moderation, or agent execution sandbox.
+- Artifact references are credential-free HTTPS URLs. Fetching/scanning artifacts is outside this MVP.
+- Public RPCs can rate-limit. Payment remains pending on transport failure.
 
-### Request and response
-
-| Request field | Meaning |
-| --- | --- |
-| `chainId` | Must be an allow-listed network (Arc Testnet) |
-| `tokenAddress` | Must equal the verified USDC address |
-| `recipientAddress` | Checksummed payout wallet |
-| `amountBaseUnits` | `bigint`, exact base units, greater than zero |
-| `jobKey` | Your job id, used for duplicate protection |
-
-A confirmed outcome has `txHash`, `status`, `sender`, `recipient`, `transferredAmount`, verified `tokenAddress`, `chainId`, parsed `receipt`, and `explorerUrl`.
-
-## Documentation
-
-- [docs/ARGO-INTEGRATION.md](docs/ARGO-INTEGRATION.md): Vercel variable, public API contract, what Argo owns
-- [docs/INTEGRATION.md](docs/INTEGRATION.md): exports, files, dependencies, API shape, job page example, assumptions
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): file map, states, security assumptions, diagram
-- [docs/SECURITY-REVIEW.md](docs/SECURITY-REVIEW.md): findings table
-- [docs/PROVENANCE.md](docs/PROVENANCE.md): what was generated in Arc Studio and the project link
-
-## Public hiring board
-
-The home page shows public job and offer review plus a public job draft form. Posting and acceptance remain explicitly unavailable until a reviewed public publication adapter is configured; they never create local fixture jobs. Existing payment routes and Studio settlement logic are preserved. See [Public lifecycle](docs/PUBLIC-LIFECYCLE.md) for adapter requirements, authority checks and remaining live prerequisites.
+See [architecture](docs/ARCHITECTURE.md), [security review](docs/SECURITY-REVIEW.md), and [historical provenance](docs/PROVENANCE.md).

@@ -13,7 +13,7 @@ export interface SettlementRequest {
   chainId: number
   tokenAddress: Address
   recipientAddress: Address
-  /** Exact amount in token base units (USDC on Arc: 6 decimals). Must be > 0. */
+  /** Exact amount in token base units (USDC: 6 decimals). Must be > 0. */
   amountBaseUnits: bigint
   /** The host's own job identifier. Used for duplicate detection; never sent onchain. */
   jobKey: string
@@ -31,16 +31,6 @@ export interface TransferLogDetails {
   value: bigint
 }
 
-/** The 18-decimal native-view mirror of an Arc USDC transfer. Informational and cross-checked. */
-export interface NativeMirrorDetails {
-  emitter: Address
-  logIndex: number
-  from: Address
-  to: Address
-  /** Value in the 18-decimal native view. */
-  valueNative: bigint
-}
-
 /** Receipt fields that were parsed and validated against the request. */
 export interface ParsedReceipt {
   transactionHash: Hash
@@ -56,7 +46,6 @@ export interface ParsedReceipt {
   transfer: TransferLogDetails
   /** Every Transfer log emitted by the token contract in this transaction. */
   tokenTransferLogs: readonly TransferLogDetails[]
-  nativeMirror: NativeMirrorDetails | null
 }
 
 export interface PendingSettlement {

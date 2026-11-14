@@ -1,14 +1,14 @@
 /** Generated in Arc Studio. */
 import { useMemo, useState, type FormEvent } from 'react'
 import { isAddress } from 'viem'
-import { ARC_TESTNET_CONFIG, toBaseUnits } from '@/settlement'
+import { BASE_MAINNET_CONFIG, toBaseUnits } from '@/settlement'
 import { Card, PrimaryButton } from './settlement/ui'
 import type { SettlementJob } from './settlement/types'
 
 /**
  * Stand-in for the Hiring Desk. In the real app the job record, the agent's verified wallet and
  * the deliverable link come from the Hiring Desk's own database and are passed to <SettlementFlow />.
- * This form exists only so the payment step can be exercised on Arc Testnet.
+ * Development-only payment harness. Base Mainnet uses real funds.
  */
 const field =
   'min-h-11 w-full rounded-xl border border-ink/15 bg-white px-3 text-sm text-ink placeholder:text-ink/35 focus:border-navy focus:outline-none focus:ring-2 focus:ring-mist'
@@ -39,9 +39,9 @@ export function JobHarness({ onReady }: { onReady: (job: SettlementJob) => void 
         deliverableUrl: deliverableUrl.trim(),
         recipientName: recipientName.trim(),
         recipientAddress,
-        chainId: ARC_TESTNET_CONFIG.chainId,
-        tokenAddress: ARC_TESTNET_CONFIG.token.address,
-        amountBaseUnits: toBaseUnits(ARC_TESTNET_CONFIG.chainId, amount),
+        chainId: BASE_MAINNET_CONFIG.chainId,
+        tokenAddress: BASE_MAINNET_CONFIG.token.address,
+        amountBaseUnits: toBaseUnits(BASE_MAINNET_CONFIG.chainId, amount),
       })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Check the job details.')

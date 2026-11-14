@@ -45,8 +45,8 @@ export function normalizeRequest(input: SettlementRequest): NormalizedRequest {
   }
 
   const recipientAddress = normalizeAddress('Recipient address', input.recipientAddress)
-  if (recipientAddress === config.token.address || recipientAddress === config.nativeMirrorEmitter) {
-    throw new SettlementError('INVALID_REQUEST', 'Recipient cannot be the token contract or a system address.')
+  if (recipientAddress === config.token.address) {
+    throw new SettlementError('INVALID_REQUEST', 'Recipient cannot be the token contract.')
   }
 
   assertValidBaseUnits(input.amountBaseUnits)

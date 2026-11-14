@@ -7,10 +7,9 @@
  */
 
 import { decodeFunctionData, erc20Abi, parseEventLogs, type Address, type Hash, type Log, type TransactionReceipt } from 'viem'
-import { toNativeView } from './amount'
 import type { SettlementNetworkConfig } from './config'
 import { SettlementError, type VerificationCheck } from './errors'
-import type { NativeMirrorDetails, ParsedReceipt, SettlementRequest, TransferLogDetails } from './types'
+import type { ParsedReceipt, SettlementRequest, TransferLogDetails } from './types'
 
 /** The subset of a viem Transaction that validation needs. */
 export interface TransactionLike {
@@ -109,18 +108,6 @@ export function validateReceipt(input: ValidateReceiptInput): ParsedReceipt {
   }
   const transfer = matches[0]
 
-  // Arc mirrors the transfer in the 18-decimal native view. If present it must agree (x 10^12).
-  const mirrorLogs = decodeTransfers(receipt.logs, config.nativeMirrorEmitter)
-  let nativeMirror: NativeMirrorDetails | null = null
-  if (mirrorLogs.length > 0) {
-    const expectedNative = toNativeView(config.chainId, request.amountBaseUnits)
-    const mirror = mirrorLogs.find((m) => same(m.from, receipt.from) && same(m.to, request.recipientAddress) && m.value === expectedNative)
-    if (!mirror) {
-      fail('native_mirror', 'The native-view transfer does not match the ERC-20 transfer.', expectedNative.toString(), mirrorLogs.map((m) => m.value.toString()).join(','))
-    }
-    nativeMirror = { emitter: config.nativeMirrorEmitter, logIndex: mirror.logIndex, from: mirror.from, to: mirror.to, valueNative: mirror.value }
-  }
-
   return {
     transactionHash: receipt.transactionHash,
     blockNumber: receipt.blockNumber,
@@ -132,6 +119,5 @@ export function validateReceipt(input: ValidateReceiptInput): ParsedReceipt {
     effectiveGasPrice: receipt.effectiveGasPrice,
     transfer,
     tokenTransferLogs: tokenLogs,
-    nativeMirror,
   }
 }

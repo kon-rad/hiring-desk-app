@@ -10,8 +10,8 @@ export type { VerifyOptions } from './verify'
 export { validateReceipt } from './receipt'
 export { formatBaseUnits, formatBaseUnitsPadded, toBaseUnits } from './amount'
 export {
-  ARC_TESTNET_CHAIN_ID,
-  ARC_TESTNET_CONFIG,
+  BASE_MAINNET_CHAIN_ID,
+  BASE_MAINNET_CONFIG,
   SETTLEMENT_NETWORKS,
   explorerAddressUrl,
   explorerTxUrl,
@@ -30,7 +30,6 @@ export type { PaymentReceiptJson, VerifyPaymentRequestBody, VerifyPaymentRespons
 export type {
   ConfirmedSettlement,
   FailedSettlement,
-  NativeMirrorDetails,
   ParsedReceipt,
   PaymentReceipt,
   PendingSettlement,

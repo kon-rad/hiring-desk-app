@@ -1,6 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { ExternalLink, Film, ShieldCheck } from 'lucide-react'
-import { ARC_PROOF, verifyArcProof } from './arcProof'
 
 const agent = {
   name: 'Akira',
@@ -20,6 +19,7 @@ const assets = [
 const swarmUrl = (ref: string) => `https://bzz.link/bzz/${ref}/`
 const arkivEntity = '0xd89a7d7f8b804a954dee120c7b72718cfca49345319d7981c7cdd83e00759544'
 const arkivTx = '0xe29596a5f2b8f2bee35c9face3b0b72997826d6a445ab5288f4b2500c4ef3c54'
+const arcTx = '0x9025c05fe6da1ebd5b88faa402af75e208fb2a141d45e56f8e61bb4e5aa250ac'
 const video = '/akira-distributed-network-15s.mp4'
 
 function Link({ href, children }: { href: string; children: ReactNode }) {
@@ -28,7 +28,6 @@ function Link({ href, children }: { href: string; children: ReactNode }) {
 
 export default function AkiraDirectoryDemo() {
   const [arkiv, setArkiv] = useState<'checking' | 'verified' | 'unavailable'>('checking')
-  const [arc, setArc] = useState<'checking' | 'verified' | 'unavailable'>('checking')
   useEffect(() => {
     const controller = new AbortController()
     void fetch('https://rpc.rabdi.db-chain.testnet.arkiv.network', {
@@ -57,17 +56,11 @@ export default function AkiraDirectoryDemo() {
     return () => controller.abort()
   }, [])
 
-  useEffect(() => {
-    let active = true
-    void verifyArcProof().then(() => { if (active) setArc('verified') }).catch(() => { if (active) setArc('unavailable') })
-    return () => { active = false }
-  }, [])
-
   return <main className="mx-auto grid w-full max-w-5xl gap-5 px-4 pb-24 pt-4 sm:px-6">
     <section className="rounded-3xl bg-navy p-6 text-white sm:p-9">
       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-mist">Argo agent · public evidence</p>
       <h2 className="mt-3 font-display text-4xl font-semibold">Akira’s job and delivery record</h2>
-      <p className="mt-3 max-w-2xl text-sm leading-6 text-white/75">The dashboard links to the published Arkiv asset record, Swarm files, ERC-8004 identity and an independently verified Arc Testnet USDC transfer.</p>
+      <p className="mt-3 max-w-2xl text-sm leading-6 text-white/75">This historical demo links to the published Arkiv asset record, Swarm files, ERC-8004 identity and a legacy test-network transfer. It is not the active Base payment flow.</p>
     </section>
 
     <section className="grid gap-4 sm:grid-cols-2">
@@ -98,10 +91,10 @@ export default function AkiraDirectoryDemo() {
     </section>
 
     <section className="rounded-3xl border border-sky-200 bg-sky-50 p-5">
-      <h3 className="font-display text-xl font-semibold">Arc Testnet USDC transfer</h3>
-      <p className="mt-2 text-sm">{arc === 'verified' ? `Live receipt verified: ${ARC_PROOF.amountUSDC} test USDC from Akira’s provider wallet to the separate demo wallet.` : arc === 'checking' ? 'Checking Arc Testnet transaction, receipt and USDC Transfer event…' : 'Arc RPC verification is currently unavailable; open the explorer transaction to inspect it.'}</p>
-      <p className="mt-2 text-xs text-sky-950/75">This is a real Arc transfer. It is not bound to the Arkiv asset record as job payment.</p>
-      <div className="mt-3 text-sm"><Link href={ARC_PROOF.explorer}>View transaction on Arc explorer</Link></div>
+      <h3 className="font-display text-xl font-semibold">Historical test transfer</h3>
+      <p className="mt-2 text-sm">Verified transfer: 0.01 test USDC from Akira’s provider wallet to the separate demo wallet.</p>
+      <p className="mt-2 text-xs text-sky-950/75">Historical provenance only. This transfer is not bound to a Cybazaar job and is not part of active settlement.</p>
+      <div className="mt-3 text-sm"><Link href={`https://explorer.testnet.arc.io/tx/${arcTx}`}>View historical transaction</Link></div>
     </section>
   </main>
 }

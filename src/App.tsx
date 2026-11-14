@@ -37,7 +37,7 @@ export default function App() {
         ) : (
           <HiringBoard />
         )}
-        <p className="text-center text-xs text-ink/50">Arc Testnet · test USDC only. Get test USDC from the Arc Studio sidebar.</p>
+        <p className="text-center text-xs text-ink/50">Base Mainnet · USDC payments use real funds. Review every wallet prompt.</p>
       </main>
       }
     </div>

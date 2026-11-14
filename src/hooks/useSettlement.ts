@@ -1,7 +1,7 @@
 /** Generated in Arc Studio. */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { erc20Abi, type Hash } from 'viem'
-import { arcTestnet } from 'viem/chains'
+import { base } from 'viem/chains'
 import { useAccount, useReadContract, useSwitchChain, useWalletClient } from 'wagmi'
 import type { SettlementJob, SettlementPhase } from '@/components/settlement/types'
 import { settlementAdapter } from '@/lib/settlementRuntime'
@@ -123,8 +123,7 @@ export function useSettlement(job: SettlementJob, options: UseSettlementOptions 
   const switchNetwork = useCallback(async () => {
     setSwitchError(null)
     try {
-      // Arc Testnet is the only allow-listed network, so the literal id is safe here.
-      await switchChainAsync({ chainId: arcTestnet.id })
+      await switchChainAsync({ chainId: base.id })
     } catch (error) {
       setSwitchError(classifyError(error).message)
     }

@@ -9,7 +9,6 @@
  */
 
 import { erc20Abi, type Address, type Hash, type PublicClient, type WalletClient } from 'viem'
-import { toNativeView } from './amount'
 import { type SettlementNetworkConfig } from './config'
 import { classifyError, SettlementError } from './errors'
 import { createKeyValueLedger, createMemoryStore, type SettlementLedger } from './ledger'
@@ -156,7 +155,7 @@ export function createSettlementAdapter(options: SettlementAdapterOptions): Sett
       return { request, config, txHash: existing.txHash, sender: existing.sender, resumed: true, ledgerWarning: null }
     }
 
-    const checks = await preflight(request, wallet)
+    await preflight(request, wallet)
     const account = wallet.account
     if (!account) throw new SettlementError('WALLET_NOT_CONNECTED', 'Connect your wallet to continue.', { retryable: true })
 
@@ -168,26 +167,6 @@ export function createSettlementAdapter(options: SettlementAdapterOptions): Sett
       functionName: 'transfer',
       args: [request.recipientAddress, request.amountBaseUnits],
     })
-
-    // On Arc the network fee is paid from the same USDC pool, so amount + fee must fit the balance.
-    const [gas, gasPrice] = await Promise.all([
-      publicClient.estimateContractGas({
-        account,
-        address: config.token.address,
-        abi: erc20Abi,
-        functionName: 'transfer',
-        args: [request.recipientAddress, request.amountBaseUnits],
-      }),
-      publicClient.getGasPrice(),
-    ])
-    const fee = gas * gasPrice
-    const needed = toNativeView(request.chainId, request.amountBaseUnits) + fee
-    if (toNativeView(request.chainId, checks.senderBalance) < needed) {
-      throw new SettlementError('INSUFFICIENT_FUNDS', 'Your wallet cannot cover this payment plus the network fee, which is paid in the same USDC balance.', {
-        retryable: true,
-        details: { balance: checks.senderBalance.toString(), required: request.amountBaseUnits.toString(), estimatedFeeNative18: fee.toString() },
-      })
-    }
 
     onProgress?.({ stage: 'awaiting_signature' })
     const txHash = await wallet.writeContract(simulation.request)

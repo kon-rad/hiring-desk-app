@@ -40,15 +40,6 @@ export function formatBaseUnitsPadded(chainId: number, baseUnits: bigint, minFra
   return `${whole}.${fraction.padEnd(minFraction, '0')}`
 }
 
-/**
- * The same funds in the 18-decimal native gas view (used to compare against fees and to
- * cross-check Arc's mirrored Transfer log). Widening is exact; this is the module's only rescale.
- */
-export function toNativeView(chainId: number, baseUnits: bigint): bigint {
-  const { token, nativeDecimals } = getNetworkConfig(chainId)
-  return baseUnits * 10n ** BigInt(nativeDecimals - token.decimals)
-}
-
 export function assertValidBaseUnits(amount: unknown): asserts amount is bigint {
   if (typeof amount !== 'bigint') {
     throw new SettlementError('INVALID_REQUEST', 'Amount must be a bigint in token base units.')

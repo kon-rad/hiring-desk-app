@@ -13,7 +13,7 @@ import { readJobRef } from '@/lib/route'
 import { createKeyValueLedger, createMemoryStore } from '@/settlement'
 import { PAYMENT_INTERFACE_ID, type Hex, type PaymentStatus, type PublicPaymentTerms } from '@/types/desk'
 
-const USDC = '0x3600000000000000000000000000000000000000' as Hex
+const USDC = getAddress('0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48')
 const recipient = getAddress('0x00000000000000000000000000000000000000b2')
 const client = getAddress('0x00000000000000000000000000000000000000a1')
 const attacker = getAddress('0x00000000000000000000000000000000000000c3')
@@ -28,13 +28,13 @@ const terms: PublicPaymentTerms = {
   recipientName: 'Atlas Agent',
   recipientAddress: recipient,
   clientAddress: client,
-  chainId: 5042002,
+  chainId: 8453,
   tokenAddress: USDC,
   amountBaseUnits: '25500000',
   amountDisplay: '25.5',
   interfaceId: PAYMENT_INTERFACE_ID,
 }
-const receipt = { txHash: HASH, sender: client, recipient, tokenAddress: USDC, chainId: 5042002, amountBaseUnits: '25500000', blockNumber: '99' }
+const receipt = { txHash: HASH, sender: client, recipient, tokenAddress: USDC, chainId: 8453, amountBaseUnits: '25500000', blockNumber: '99' }
 
 interface Call { url: string; init: RequestInit }
 function fakeFetch(responses: Array<{ status?: number; body: unknown }>, calls: Call[] = []): typeof fetch {
@@ -71,7 +71,7 @@ describe('API client requests', () => {
     expect(result.state === 'payable' && result.terms.amountBaseUnits).toBe('25500000')
     expect(calls[0]?.url).toBe('https://argo.test/api/jobs/JOB-1042/payment')
     expect(calls[0]?.init.method).toBe('GET')
-    expect(calls[0]?.init.credentials).toBe('omit')
+    expect(calls[0]?.init.credentials).toBe('include')
     expect(calls[0]?.init.body).toBeUndefined()
   })
   test('verify and reconcile send ONLY the transaction hash', async () => {
@@ -83,7 +83,7 @@ describe('API client requests', () => {
     expect(calls[1]?.url).toBe('https://argo.test/api/jobs/JOB-1042/payments/reconcile')
     for (const c of calls) {
       expect(c.init.method).toBe('POST')
-      expect(c.init.credentials).toBe('omit')
+      expect(c.init.credentials).toBe('include')
       expect(JSON.parse(String(c.init.body))).toEqual({ txHash: HASH })
     }
   })
@@ -129,8 +129,8 @@ describe('server terms are authoritative', () => {
     expect(html).toContain('Atlas Agent')
     expect(html).toContain('JOB-1042')
     expect(html).toContain('https://deliverables.test/job-1042')
-    expect(html).toContain('Arc Testnet')
-    expect(html).toContain('5042002')
+    expect(html).toContain('Base Mainnet')
+    expect(html).toContain('8453')
     expect(html).toContain(USDC)
     expect(html).toContain(client)
   })
@@ -262,7 +262,7 @@ describe('payment controller', () => {
   })
   test('browser storage never decides payment state', async () => {
     const ledger = createKeyValueLedger(createMemoryStore())
-    await ledger.markSubmitted({ jobKey: 'job-1042', chainId: 5042002, txHash: HASH, sender: client })
+    await ledger.markSubmitted({ jobKey: 'job-1042', chainId: 8453, txHash: HASH, sender: client })
     await ledger.markConfirmed('job-1042', HASH)
     expect((await ledger.get('job-1042'))?.status).toBe('confirmed')
     const ctrl = make(fakeClient({ get: [{ state: 'payable', terms }] }))
