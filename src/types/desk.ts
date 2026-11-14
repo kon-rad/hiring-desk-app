@@ -7,7 +7,7 @@
 
 export type Hex = `0x${string}`
 
-export const PAYMENT_INTERFACE_ID = 'arc:testnet:erc20-usdc:transfer:v1' as const
+export const PAYMENT_INTERFACE_ID = 'base:mainnet:erc20-usdc:transfer:v1' as const
 
 /** Authoritative payment terms for one accepted job. Every field is decided by Argo. */
 export type PublicPaymentTerms = {
@@ -17,7 +17,7 @@ export type PublicPaymentTerms = {
   recipientName: string
   recipientAddress: Hex
   clientAddress?: Hex
-  chainId: 5042002
+  chainId: 8453
   tokenAddress: Hex
   /** Exact amount in token base units, decimal digits only. */
   amountBaseUnits: string

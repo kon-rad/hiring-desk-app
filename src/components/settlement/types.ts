@@ -1,7 +1,7 @@
 /** Generated in Arc Studio. */
 import type { Address } from 'viem'
 
-/** Everything the Hiring Desk passes to the payment step. The app owns this data; Arc never stores it. */
+/** Everything the Hiring Desk passes to the payment step. Server-derived terms are authoritative. */
 export interface SettlementJob {
   /** Idempotency key for the payment. Usually the job id. */
   jobKey: string

@@ -5,7 +5,7 @@
 import { describe, expect, test } from 'bun:test'
 import { encodeAbiParameters, encodeFunctionData, erc20Abi, getAddress, pad, type Address, type Hash, type TransactionReceipt } from 'viem'
 import {
-  ARC_TESTNET_CONFIG,
+  BASE_MAINNET_CONFIG,
   createKeyValueLedger,
   createMemoryStore,
   formatBaseUnits,
@@ -18,7 +18,7 @@ import {
   type SettlementRequest,
 } from '@/settlement'
 
-const config = ARC_TESTNET_CONFIG
+const config = BASE_MAINNET_CONFIG
 const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
 const sender = getAddress('0x00000000000000000000000000000000000000a1')
 const recipient = getAddress('0x00000000000000000000000000000000000000b2')
@@ -60,10 +60,7 @@ function receiptWith(overrides: Partial<Record<string, unknown>> = {}, logs?: Re
     to: config.token.address,
     gasUsed: 50_000n,
     effectiveGasPrice: 1n,
-    logs: logs ?? [
-      transferLog(config.nativeMirrorEmitter, sender, recipient, AMOUNT * 10n ** 12n, 0),
-      transferLog(config.token.address, sender, recipient, AMOUNT, 1),
-    ],
+    logs: logs ?? [transferLog(config.token.address, sender, recipient, AMOUNT, 1)],
     ...overrides,
   } as unknown as TransactionReceipt
 }
@@ -86,7 +83,6 @@ describe('validateReceipt', () => {
     const parsed = run()
     expect(parsed.transfer.value).toBe(AMOUNT)
     expect(parsed.from).toBe(sender)
-    expect(parsed.nativeMirror?.valueNative).toBe(AMOUNT * 10n ** 12n)
   })
 
   test('rejects a reverted receipt', () => {
@@ -120,14 +116,6 @@ describe('validateReceipt', () => {
     const log = transferLog(config.token.address, sender, recipient, AMOUNT, 1)
     expect(() => run({ receipt: receiptWith({}, [log, { ...log, logIndex: 2 }]) })).toThrow()
   })
-  test('rejects a native-view mirror that disagrees with the ERC-20 amount', () => {
-    const logs = [transferLog(config.nativeMirrorEmitter, sender, recipient, AMOUNT, 0), transferLog(config.token.address, sender, recipient, AMOUNT, 1)]
-    expect(() => run({ receipt: receiptWith({}, logs) })).toThrow()
-  })
-  test('accepts a receipt without a native mirror log', () => {
-    const parsed = run({ receipt: receiptWith({}, [transferLog(config.token.address, sender, recipient, AMOUNT, 1)]) })
-    expect(parsed.nativeMirror).toBeNull()
-  })
 })
 
 describe('typed failure codes and PaymentReceipt', () => {
@@ -159,6 +147,19 @@ describe('typed failure codes and PaymentReceipt', () => {
   test('verifySettlement never throws on a bad request', async () => {
     const outcome = await verifySettlement({} as never, { ...request, amountBaseUnits: 0n }, hash)
     expect(outcome.status).toBe('failed')
+  })
+  test('server verification confirms a mocked Base receipt only after required confirmations', async () => {
+    const publicClient = {
+      getChainId: async () => 8453,
+      getTransaction: async () => tx(),
+      getTransactionReceipt: async () => receiptWith(),
+      getBlockNumber: async () => 11n,
+    } as never
+    const outcome = await verifySettlement(publicClient, request, hash, { expectedSender: sender })
+    expect(outcome.status).toBe('confirmed')
+    expect(outcome.status === 'confirmed' && outcome.explorerUrl).toBe(`https://basescan.org/tx/${hash}`)
+    const pending = await verifySettlement({ ...publicClient, getBlockNumber: async () => 10n } as never, request, hash, { expectedSender: sender })
+    expect(pending.status).toBe('pending')
   })
 })
 

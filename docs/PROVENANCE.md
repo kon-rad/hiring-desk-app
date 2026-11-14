@@ -1,4 +1,6 @@
-# Provenance
+# Historical provenance
+
+> Historical record only. Network/config statements below describe the original generated baseline, not the active Base Mainnet settlement configuration. See the README and architecture document for current behavior.
 
 Built with [Arc Studio](https://studio.arc.io).
 

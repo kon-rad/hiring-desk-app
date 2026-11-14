@@ -71,7 +71,7 @@ export function ReviewCard(props: ReviewCardProps) {
         )}
       </div>
       <p className="mt-3 text-center text-xs text-ink/55">
-        Your wallet will ask you to approve this exact transfer. Arc never sees or stores a private key.
+        Your wallet will ask you to approve this exact transfer. The app never sees or stores a private key.
       </p>
     </Card>
   )

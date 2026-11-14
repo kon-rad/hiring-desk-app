@@ -7,11 +7,11 @@
  * state, transaction reservation and duplicate protection.
  */
 
-import { ARC_TESTNET_CHAIN_ID, createKeyValueLedger, createMemoryStore, createSettlementAdapter, createSettlementPublicClient } from '@/settlement'
+import { BASE_MAINNET_CHAIN_ID, createKeyValueLedger, createMemoryStore, createSettlementAdapter, createSettlementPublicClient } from '@/settlement'
 
 const store = typeof window !== 'undefined' && window.localStorage ? window.localStorage : createMemoryStore()
 
 /** Temporary UI resume hint only. Not a record of payment. */
 export const settlementLedger = createKeyValueLedger(store)
-export const settlementPublicClient = createSettlementPublicClient(ARC_TESTNET_CHAIN_ID)
+export const settlementPublicClient = createSettlementPublicClient(BASE_MAINNET_CHAIN_ID)
 export const settlementAdapter = createSettlementAdapter({ publicClient: settlementPublicClient, ledger: settlementLedger })

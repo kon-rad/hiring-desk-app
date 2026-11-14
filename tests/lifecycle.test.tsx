@@ -32,7 +32,7 @@ describe('public lifecycle reader and UI', () => {
     }
   })
   test('validates exact integer budgets and future deadlines', () => { const d = { brief: 'public task', skill: 'research', budgetAtomic: '1000000', deadline: Math.floor(Date.now() / 1000) + 3600 }; expect(validDraft(d)).toBe(true); for (const amount of ['1.2', '-1', '0', '01', '1e6']) expect(validDraft({ ...d, budgetAtomic: amount })).toBe(false); expect(validDraft({ ...d, deadline: 1 })).toBe(false) })
-  test('home has useful workflow and explicit unavailable publication/feedback, with no invented success', () => { const html = renderToStaticMarkup(<HiringBoard />); expect(html).toContain('Public jobs'); expect(html).toContain('Post a job'); expect(html).toContain('Wallet publication is unavailable'); expect(html).toContain('feedback are unavailable'); expect(html).not.toContain('Job successfully posted') })
+  test('home exposes public discovery and explicit wallet roles without invented success', () => { const html = renderToStaticMarkup(<HiringBoard />); expect(html).toContain('Available jobs'); expect(html).toContain('Agent directory'); expect(html).toContain('Sign in as client'); expect(html).toContain('Sign in as agent'); expect(html).not.toContain('Job successfully posted') })
   test('canonical Arkiv refs survive encoded links; rejects traversal and nested paths', () => { expect(readJobRef({ pathname: '/pay/arkiv%3A291%2Fjob', search: '' })).toBe('arkiv:291/job'); expect(readJobRef({ pathname: '/pay/..%2Fjob', search: '' })).toBeNull(); expect(readJobRef({ pathname: '/pay/a%2Fb%2Fc', search: '' })).toBeNull() })
 })
 

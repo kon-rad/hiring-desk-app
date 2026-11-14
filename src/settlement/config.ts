@@ -1,13 +1,12 @@
 /**
  * Network and token configuration for the settlement module.
  *
- * Generated in Arc Studio. This is the ONLY file that knows which chain and token are allowed,
- * and the ONLY place token decimals are written down. Values were confirmed against live Arc
- * Testnet on 2026-11-06 (eth_chainId = 0x4cef52, decimals() = 6, symbol() = USDC), and the
- * adapter re-checks decimals() and symbol() on chain before the first payment.
+ * This is the ONLY file that knows which chain and token are allowed, and the ONLY place
+ * token decimals are written down. The adapter re-checks decimals() and symbol() on chain
+ * before the first payment.
  *
  * Self-contained: depends only on viem. Re-verify every value against
- * https://docs.arc.io before changing it or adding a network.
+ * the chain and issuer documentation before changing it or adding a network.
  */
 
 import { getAddress, type Address } from 'viem'
@@ -26,36 +25,29 @@ export interface SettlementNetworkConfig {
   rpcUrl: string
   explorerBase: string
   token: SettlementTokenConfig
-  /** Decimals of the native gas view. On Arc the gas token IS USDC, at 18 decimals instead of 6. */
+  /** Decimals of the native gas asset (ETH on Base). */
   nativeDecimals: number
   /** Blocks (including the inclusion block) required before a payment counts as confirmed. */
   requiredConfirmations: number
-  /**
-   * Arc mirrors every USDC ERC-20 transfer as a second Transfer log, in the 18-decimal
-   * native view, from this system address. Observed on live Arc Testnet receipts. It is
-   * never counted as a token transfer; it is only cross-checked (value = amount x 10^12).
-   */
-  nativeMirrorEmitter: Address
 }
 
-export const ARC_TESTNET_CHAIN_ID = 5042002
+export const BASE_MAINNET_CHAIN_ID = 8453
 
-const ARC_TESTNET: SettlementNetworkConfig = {
-  chainId: ARC_TESTNET_CHAIN_ID,
-  name: 'Arc Testnet',
-  rpcUrl: 'https://rpc.testnet.arc.io',
-  explorerBase: 'https://explorer.testnet.arc.io',
-  token: { symbol: 'USDC', address: getAddress('0x3600000000000000000000000000000000000000'), decimals: 6 },
+const BASE_MAINNET: SettlementNetworkConfig = {
+  chainId: BASE_MAINNET_CHAIN_ID,
+  name: 'Base Mainnet',
+  rpcUrl: 'https://mainnet.base.org',
+  explorerBase: 'https://basescan.org',
+  token: { symbol: 'USDC', address: getAddress('0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'), decimals: 6 },
   nativeDecimals: 18,
-  requiredConfirmations: 1,
-  nativeMirrorEmitter: getAddress('0xfffffffffffffffffffffffffffffffffffffffe'),
+  requiredConfirmations: 2,
 }
 
-export const ARC_TESTNET_CONFIG: SettlementNetworkConfig = Object.freeze(ARC_TESTNET)
+export const BASE_MAINNET_CONFIG: SettlementNetworkConfig = Object.freeze(BASE_MAINNET)
 
 /** Allow-list. A chain that is not here can never be paid on. */
 export const SETTLEMENT_NETWORKS: Readonly<Record<number, SettlementNetworkConfig>> = Object.freeze({
-  [ARC_TESTNET_CONFIG.chainId]: ARC_TESTNET_CONFIG,
+  [BASE_MAINNET_CONFIG.chainId]: BASE_MAINNET_CONFIG,
 })
 
 export function getNetworkConfig(chainId: number): SettlementNetworkConfig {

@@ -1,72 +1,39 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Card, FullValue, PrimaryButton, Row } from '@/components/settlement/ui'
-import { createLifecycleReader, validDraft, validateIntentForRequest, type JobDraft, type PublicationAdapter, type PublicItem } from '@/lib/lifecycle-api'
-import { readPendingPublication, writePendingPublication, reconcilePendingPublication, type PendingPublication } from '@/lib/lifecycle-pending'
-import { LifecycleWallet, type InjectedProvider, type PublicationIntent } from '@/lib/lifecycle-wallet'
+import { authenticate, marketplaceApi } from '@/lib/marketplace-api'
+import type { InjectedProvider } from '@/lib/lifecycle-wallet'
+import type { AgentProfile, JobRequest, MarketplaceRole } from '@/types/marketplace'
 
-const unavailable = 'Wallet publication is unavailable until Argo provides the reviewed public transaction adapter. Your draft is not posted.'
-function text(value: unknown) { return typeof value === 'string' || typeof value === 'number' ? String(value) : 'Unavailable' }
-/** Public marketplace. Publication integration is explicit; no hidden global signer or fixture fallback. */
-export function HiringBoard({ publication }: { publication?: PublicationAdapter }) {
-  const reader = useMemo(() => createLifecycleReader(), [])
-  const [jobs, setJobs] = useState<PublicItem[]>([]), [offers, setOffers] = useState<PublicItem[]>([])
-  const [jobState, setJobState] = useState<Record<string, unknown> | null>(null)
-  const [message, setMessage] = useState('Loading public jobs…'), [selected, setSelected] = useState('')
-  const [draft, setDraft] = useState<JobDraft>({ brief: '', skill: '', budgetAtomic: '', deadline: 0 })
-  const [walletAddress, setWalletAddress] = useState(''), [intent, setIntent] = useState<PublicationIntent | null>(null)
-  const [pending, setPending] = useState<PendingPublication | null>(() => readPendingPublication()), [busy, setBusy] = useState(false)
-  useEffect(() => { writePendingPublication(pending) }, [pending])
-  const wallet = useRef<LifecycleWallet | null>(null)
-  const generation = useRef(0)
-  useEffect(() => { let active = true; void reader.jobs().then(result => { if (!active) return; if (result.state === 'ready') { setJobs(result.value); setMessage(result.value.length ? 'Public job records loaded. Open a job to review its offer and evidence.' : 'No public jobs are available.'); } else setMessage(result.message) }); return () => { active = false; generation.current++; wallet.current?.dispose() } }, [reader])
-  function invalidate() { generation.current++; setIntent(null); setWalletAddress(''); setMessage('Wallet account or network changed. Connect and review again. Submitted transactions still need reconciliation.') }
-  async function connect() {
-    try {
-      const provider = (window as Window & { ethereum?: InjectedProvider }).ethereum
-      if (!provider) throw new Error('Install an EIP-1193 browser wallet to connect.')
-      wallet.current?.dispose(); wallet.current = new LifecycleWallet(provider, invalidate)
-      setWalletAddress(await wallet.current.connect()); setIntent(null); setMessage('Wallet connected. No transaction has been signed.')
-    } catch (error) { setMessage(error instanceof Error ? error.message : 'Wallet unavailable.') }
+const inputClass = 'rounded-xl border p-3'
+const emptyJob = { skill: '', title: '', description: '', budgetBaseUnits: '', deadline: '', parameters: '{}' }
+
+/** Authenticated MVP workspace. All rendered job and result content remains inert text. */
+export function HiringBoard() {
+  const [role, setRole] = useState<MarketplaceRole | null>(null), [address, setAddress] = useState('')
+  const [agents, setAgents] = useState<AgentProfile[]>([]), [jobs, setJobs] = useState<JobRequest[]>([]), [selected, setSelected] = useState<JobRequest | null>(null)
+  const [message, setMessage] = useState('Browse public agents and available jobs.'), [draft, setDraft] = useState(emptyJob)
+  const [profile, setProfile] = useState({ displayName: '', bio: '', skills: '', payoutAddress: '' })
+  const refresh = async () => { const [a, j] = await Promise.all([marketplaceApi.agents(), marketplaceApi.jobs()]); setAgents(a.agents); setJobs(j.jobs) }
+  useEffect(() => { void refresh().catch(error => setMessage(error instanceof Error ? error.message : 'Public API unavailable')) }, [])
+  async function run(work: () => Promise<void>) { try { await work() } catch (error) { setMessage(error instanceof Error ? error.message : 'Request failed') } }
+  async function signIn(nextRole: MarketplaceRole) {
+    const provider = (window as Window & { ethereum?: InjectedProvider }).ethereum
+    if (!provider) throw new Error('Install an EIP-1193 wallet to authenticate.')
+    const session = await authenticate(provider, nextRole); setRole(session.role); setAddress(session.address); setMessage(`Authenticated as ${session.role}.`)
   }
-  async function run(operation: () => Promise<void>) { if (busy) return; setBusy(true); try { await operation() } catch (error) { setMessage(error instanceof Error ? error.message : 'Action unavailable. Check public state before retrying.') } finally { setBusy(false) } }
-  async function prepare(action: 'post-job' | 'accept-offer', input: JobDraft | { jobRef: string; offerRef: string }) {
-    setIntent(null)
-    if (!publication) { setMessage(unavailable); return }
-    if (!walletAddress || !wallet.current) throw new Error('Connect the client wallet first.')
-    const current = generation.current
-    const prepared = await publication.prepare(action, input, walletAddress)
-    if (current !== generation.current) throw new Error('Wallet changed while preparing. Start a new review.')
-    validateIntentForRequest(prepared, action, input, walletAddress)
-    wallet.current.review(prepared); setIntent(prepared); setMessage('Review every authoritative field below before signing.')
-  }
-  async function inspect(ref: string) {
-    setSelected(ref); setOffers([]); setJobState(null); setIntent(null); generation.current++
-    const current = generation.current
-    const [result, state] = await Promise.all([reader.offers(ref), reader.inspect(ref)])
-    if (current !== generation.current) return
-    if (state.state === 'ready' && state.value && typeof state.value === 'object' && !Array.isArray(state.value)) setJobState(state.value as Record<string, unknown>)
-    if (result.state === 'ready') { setOffers(result.value); setMessage('Offers loaded from Argo. Acceptance requires a reviewed wallet publication.'); } else setMessage(result.message)
-  }
-  async function reconcile() {
-    if (!pending) return
-    if (!publication) throw new Error('Publication adapter unavailable. Keep this transaction reference; it is not confirmation.')
-    // Re-register the same hash idempotently before reconciling, including after a failed submit call or reload.
-    const result = await reconcilePendingPublication(publication, pending)
-    setMessage(result.message)
-    if (result.state === 'confirmed') { setPending(null); const jobs = await reader.jobs(); if (jobs.state === 'ready') setJobs(jobs.value) }
-  }
+  async function open(job: JobRequest) { const loaded = await marketplaceApi.job(job.id); setSelected(loaded.job) }
   return <>
-    <Card><h2 className="font-display text-2xl">Hire an agent</h2><p className="mt-2 text-sm text-ink/70">Review a public job and its offer, authorize the work, then pay after delivery. Payment is a direct transfer, not escrow.</p><p role="status" className="mt-4 break-words text-sm">{message}</p><div className="mt-4"><PrimaryButton disabled={busy} onClick={() => { void run(connect) }}>Connect client wallet</PrimaryButton></div>{walletAddress && <dl><Row label="Connected client"><FullValue value={walletAddress} /></Row></dl>}</Card>
-    <Card><h2 className="font-display text-xl">Public jobs</h2><p className="my-2 text-sm text-ink/70">Refresh reloads public records from Argo. Browser storage never decides job or payment status.</p>{jobs.map(job => <article key={job.ref} className="border-t border-ink/10 py-4"><h3 className="font-semibold">{text(job.record.skill)}</h3><p className="my-2 whitespace-pre-wrap text-sm">{text(job.record.brief)}</p><dl><Row label="Job"><FullValue value={job.ref} /></Row><Row label="Author"><FullValue value={job.creator} /></Row><Row label="Budget base units">{text(job.record.budgetAtomic)} {text(job.record.asset)}</Row><Row label="Record">{job.finalized ? 'Finalized public record' : 'Pending public record'}</Row></dl><PrimaryButton disabled={busy || !job.finalized} onClick={() => { void run(() => inspect(job.ref)) }}>Review offers and job</PrimaryButton></article>)}</Card>
-    {selected && <Card><h2 className="font-display text-xl">Offer review</h2><FullValue value={selected} />{jobState && <dl>{['stage', 'acceptanceRef', 'claimRef', 'deliveryRef'].map(key => <Row key={key} label={key}><span className="break-all">{text(jobState[key])}</span></Row>)}</dl>}{!offers.length && <p className="mt-3 text-sm">No verified offers loaded.</p>}{offers.map(offer => <article key={offer.ref} className="mt-4 border-t border-ink/10"><dl>{[['Offer', offer.ref], ['Provider identity', offer.record.providerId], ['Provider wallet', offer.record.provider], ['Recipient', offer.record.recipient], ['Amount base units', offer.record.amountAtomic], ['Asset', offer.record.asset], ['Payment chain', offer.record.paymentChainId], ['Expires at (Unix seconds)', offer.record.expiresAt]].map(([label, value]) => <Row key={text(label)} label={text(label)}><span className="break-all">{text(value)}</span></Row>)}</dl><PrimaryButton disabled={busy || !offer.finalized || jobState?.conflict === true || typeof offer.record.expiresAt !== 'number' || offer.record.expiresAt * 1000 <= Date.now()} onClick={() => { void run(() => prepare('accept-offer', { jobRef: selected, offerRef: offer.ref })) }}>Review acceptance</PrimaryButton></article>)}<a className="mt-4 inline-block text-sm underline" href={`/pay/${encodeURIComponent(selected)}`}>Open payment after delivery</a></Card>}
-    <Card><h2 className="font-display text-xl">Post a job</h2><p className="mt-2 text-sm text-ink/70">Only public or synthetic input belongs on the public board. Your draft stays in this tab until a publication is signed and independently confirmed.</p><form className="mt-4 grid gap-4" onSubmit={event => { event.preventDefault(); void run(async () => { if (!validDraft(draft)) throw new Error('Enter a brief, skill, positive integer budget and future deadline.'); await prepare('post-job', draft) }) }}>
-      <label className="grid gap-1 text-sm">Skill<input required className="rounded-xl border p-3" value={draft.skill} onChange={e => { setIntent(null); generation.current++; setDraft({ ...draft, skill: e.target.value }) }} /></label>
-      <label className="grid gap-1 text-sm">Public brief<textarea required maxLength={8000} className="rounded-xl border p-3" value={draft.brief} onChange={e => { setIntent(null); generation.current++; setDraft({ ...draft, brief: e.target.value }) }} /></label>
-      <label className="grid gap-1 text-sm">Budget in USDC base units (1 USDC = 1000000)<input required inputMode="numeric" pattern="[1-9][0-9]*" className="rounded-xl border p-3" value={draft.budgetAtomic} onChange={e => { setIntent(null); generation.current++; setDraft({ ...draft, budgetAtomic: e.target.value }) }} /></label>
-      <label className="grid gap-1 text-sm">Deadline (your local time)<input required type="datetime-local" className="rounded-xl border p-3" onChange={e => { setIntent(null); generation.current++; setDraft({ ...draft, deadline: Math.floor(new Date(e.target.value).getTime() / 1000) }) }} /></label><PrimaryButton disabled={busy} type="submit">Review job publication</PrimaryButton>
-    </form>{!publication && <p className="mt-3 text-sm">{unavailable}</p>}</Card>
-    {intent && <Card><h2 className="font-display text-xl">Review wallet publication</h2><dl>{[['Action', intent.action], ['Signer', intent.signer], ['Network chain ID', intent.chainId], ['Destination contract', intent.transaction.to], ['Calldata', intent.transaction.data], ['Native value (hex base units)', intent.transaction.value], ['Job binding', intent.jobRef], ['Payload digest', intent.payloadDigest], ['Nonce', intent.nonce], ['Offer reference', intent.offerRef ?? 'Not applicable'], ['Offer digest', intent.offerDigest ?? 'Not applicable'], ['Normalized public payload', JSON.stringify(intent.payload)], ['Intent reference', intent.intentRef], ['Expiry (Unix seconds)', intent.expiresAt]].map(([label, value]) => <Row key={text(label)} label={text(label)}><span className="break-all font-mono">{text(value)}</span></Row>)}</dl><PrimaryButton disabled={busy || !!pending} onClick={() => { void run(async () => { if (!wallet.current || !publication) return; const reviewed = intent; const result = await wallet.current.submit(reviewed); setIntent(null); setPending({ intentRef: reviewed.intentRef, txHash: result.txHash, action: reviewed.action, jobRef: reviewed.jobRef }); setMessage('Submitted. Pending independent public confirmation.'); await publication.submit(reviewed.intentRef, result.txHash) }) }}>Sign exact publication</PrimaryButton></Card>}
-    {pending && <Card><h2 className="font-display text-xl">Publication pending</h2><FullValue value={pending.txHash} /><p className="my-3 text-sm">This saved transaction reference is a recovery hint only. A transaction hash does not confirm the job or acceptance.</p><PrimaryButton disabled={busy} onClick={() => { void run(reconcile) }}>Retry registration and reconcile</PrimaryButton></Card>}
-    <Card><h2 className="font-display text-xl">Provider identity and feedback</h2><p className="mt-2 text-sm text-ink/70">Verified provider profiles and feedback are unavailable until the public registry reader and deployed feedback transaction contract are connected. No local rating or placeholder identity is shown.</p></Card>
+    <Card><h2 className="font-display text-2xl">Cybazaar hiring desk</h2><p className="mt-2 text-sm text-ink/70">Authenticate with a signed message. Signing in never sends a transaction or exposes a private key.</p><div className="mt-4 flex gap-2"><PrimaryButton onClick={() => void run(() => signIn('client'))}>Sign in as client</PrimaryButton><PrimaryButton onClick={() => void run(() => signIn('agent'))}>Sign in as agent</PrimaryButton></div><p role="status" className="mt-3 text-sm">{message}</p>{address && <Row label={`Authenticated ${role}`}><FullValue value={address} /></Row>}</Card>
+    <Card><h2 className="font-display text-xl">Agent directory</h2>{agents.length === 0 && <p className="mt-2 text-sm">No agent profiles are published.</p>}{agents.map(agent => <article className="mt-4 border-t pt-3" key={agent.address}><h3 className="font-semibold">{agent.displayName}</h3><p className="whitespace-pre-wrap text-sm">{agent.bio}</p><p className="text-sm">Skills: {agent.skills.join(', ')}</p><FullValue value={agent.address} /></article>)}</Card>
+    {role === 'agent' && <Card><h2 className="font-display text-xl">Publish agent profile</h2><form className="mt-3 grid gap-3" onSubmit={event => { event.preventDefault(); void run(async () => { await marketplaceApi.profile({ ...profile, skills: profile.skills.split(',').map(v => v.trim()).filter(Boolean) }); await refresh(); setMessage('Agent profile saved for this local session.') }) }}><input required placeholder="Display name" className={inputClass} value={profile.displayName} onChange={e => setProfile({ ...profile, displayName: e.target.value })}/><textarea required placeholder="Bio" className={inputClass} value={profile.bio} onChange={e => setProfile({ ...profile, bio: e.target.value })}/><input required placeholder="Skills, comma separated" className={inputClass} value={profile.skills} onChange={e => setProfile({ ...profile, skills: e.target.value })}/><input required placeholder="Base USDC payout wallet" className={inputClass} value={profile.payoutAddress} onChange={e => setProfile({ ...profile, payoutAddress: e.target.value })}/><PrimaryButton type="submit">Save profile</PrimaryButton></form></Card>}
+    <Card><h2 className="font-display text-xl">Available jobs</h2>{jobs.length === 0 && <p className="mt-2 text-sm">No available jobs.</p>}{jobs.map(job => <article className="mt-4 border-t pt-3" key={job.id}><h3 className="font-semibold">{job.title}</h3><p className="whitespace-pre-wrap text-sm">{job.description}</p><p className="text-sm">{job.skill} · {job.budgetBaseUnits} USDC base units · {job.state}</p>{address && <PrimaryButton onClick={() => void run(() => open(job))}>Open job</PrimaryButton>}</article>)}</Card>
+    {role === 'client' && <Card><h2 className="font-display text-xl">Create job request</h2><form className="mt-3 grid gap-3" onSubmit={event => { event.preventDefault(); void run(async () => { const created = await marketplaceApi.create({ ...draft, deadline: Math.floor(new Date(draft.deadline).getTime() / 1000), parameters: JSON.parse(draft.parameters) }); setSelected(created.job); setDraft(emptyJob); await refresh() }) }}>{(['skill', 'title', 'description', 'budgetBaseUnits'] as const).map(key => <input key={key} required placeholder={key} className={inputClass} value={draft[key]} onChange={e => setDraft({ ...draft, [key]: e.target.value })}/>)}<input required type="datetime-local" className={inputClass} value={draft.deadline} onChange={e => setDraft({ ...draft, deadline: e.target.value })}/><textarea required aria-label="Job parameters JSON" className={inputClass} value={draft.parameters} onChange={e => setDraft({ ...draft, parameters: e.target.value })}/><PrimaryButton type="submit">Create job</PrimaryButton></form></Card>}
+    {selected && <Card><h2 className="font-display text-xl">Job workspace</h2><Row label="Job"><FullValue value={selected.id}/></Row><Row label="State">{selected.state}</Row><Row label="Parameters"><span className="whitespace-pre-wrap break-all">{JSON.stringify(selected.parameters)}</span></Row>{selected.result && <><Row label="Result type">{selected.result.contentType}</Row><Row label="Result"><span className="whitespace-pre-wrap break-all">{selected.result.content}</span></Row>{selected.result.artifactUrl && <a target="_blank" rel="noopener noreferrer" className="underline" href={selected.result.artifactUrl}>Open result artifact</a>}</>}
+      {role === 'client' && selected.state === 'open' && <div className="mt-4 grid gap-2">{agents.map(agent => <PrimaryButton key={agent.address} onClick={() => void run(async () => { const r = await marketplaceApi.action(selected.id, 'hire', { agentAddress: agent.address }); setSelected(r.job); await refresh() })}>Hire {agent.displayName}</PrimaryButton>)}</div>}
+      {role === 'agent' && selected.state === 'hired' && <PrimaryButton onClick={() => void run(async () => setSelected((await marketplaceApi.action(selected.id, 'claim')).job))}>Accept job</PrimaryButton>}
+      {role === 'agent' && selected.state === 'accepted' && <form className="mt-4 grid gap-2" onSubmit={event => { event.preventDefault(); const data = new FormData(event.currentTarget); void run(async () => setSelected((await marketplaceApi.action(selected.id, 'result', { contentType: data.get('contentType'), content: data.get('content'), artifactUrl: data.get('artifactUrl') || undefined })).job)) }}><select name="contentType" className={inputClass}><option>text/plain</option><option>application/json</option></select><textarea required name="content" placeholder="Result" className={inputClass}/><input name="artifactUrl" placeholder="Optional HTTPS artifact URL" className={inputClass}/><PrimaryButton type="submit">Submit result</PrimaryButton></form>}
+      {role === 'client' && selected.state === 'submitted' && <form className="mt-4 grid gap-2" onSubmit={event => { event.preventDefault(); const data = new FormData(event.currentTarget); void run(async () => setSelected((await marketplaceApi.action(selected.id, 'reviews', { rating: Number(data.get('rating')), comment: data.get('comment') })).job)) }}><input required name="rating" type="number" min="1" max="5" className={inputClass}/><textarea required name="comment" placeholder="Review" className={inputClass}/><PrimaryButton type="submit">Post review</PrimaryButton></form>}
+      {role === 'client' && ['submitted', 'reviewed', 'paid'].includes(selected.state) && <a className="mt-4 inline-block underline" href={`/jobs/${encodeURIComponent(selected.id)}`}>Review and pay in Base USDC</a>}
+    </Card>}
   </>
 }

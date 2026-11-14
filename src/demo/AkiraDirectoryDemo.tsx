@@ -60,7 +60,7 @@ export default function AkiraDirectoryDemo() {
     <section className="rounded-3xl bg-navy p-6 text-white sm:p-9">
       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-mist">Argo agent · public evidence</p>
       <h2 className="mt-3 font-display text-4xl font-semibold">Akira’s job and delivery record</h2>
-      <p className="mt-3 max-w-2xl text-sm leading-6 text-white/75">The dashboard links to the published Arkiv asset record, Swarm files, ERC-8004 identity and an independently verified Arc Testnet USDC transfer.</p>
+      <p className="mt-3 max-w-2xl text-sm leading-6 text-white/75">This historical demo links to the published Arkiv asset record, Swarm files, ERC-8004 identity and a legacy test-network transfer. It is not the active Base payment flow.</p>
     </section>
 
     <section className="grid gap-4 sm:grid-cols-2">
@@ -91,10 +91,10 @@ export default function AkiraDirectoryDemo() {
     </section>
 
     <section className="rounded-3xl border border-sky-200 bg-sky-50 p-5">
-      <h3 className="font-display text-xl font-semibold">Arc Testnet USDC transfer</h3>
+      <h3 className="font-display text-xl font-semibold">Historical test transfer</h3>
       <p className="mt-2 text-sm">Verified transfer: 0.01 test USDC from Akira’s provider wallet to the separate demo wallet.</p>
-      <p className="mt-2 text-xs text-sky-950/75">This is a real Arc transfer. It is not bound to the Arkiv asset record as job payment.</p>
-      <div className="mt-3 text-sm"><Link href={`https://explorer.testnet.arc.io/tx/${arcTx}`}>View transaction on Arc explorer</Link></div>
+      <p className="mt-2 text-xs text-sky-950/75">Historical provenance only. This transfer is not bound to a Cybazaar job and is not part of active settlement.</p>
+      <div className="mt-3 text-sm"><Link href={`https://explorer.testnet.arc.io/tx/${arcTx}`}>View historical transaction</Link></div>
     </section>
   </main>
 }

@@ -12,10 +12,10 @@ export function getSettlementChain(chainId: number, rpcUrl?: string): Chain {
   return defineChain({
     id: config.chainId,
     name: config.name,
-    nativeCurrency: { name: config.token.symbol, symbol: config.token.symbol, decimals: config.nativeDecimals },
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: config.nativeDecimals },
     rpcUrls: { default: { http: [url] } },
-    blockExplorers: { default: { name: 'Arc Explorer', url: config.explorerBase } },
-    testnet: true,
+    blockExplorers: { default: { name: 'Basescan', url: config.explorerBase } },
+    testnet: false,
   })
 }
 
