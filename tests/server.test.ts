@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { privateKeyToAccount } from 'viem/accounts'
 import { AuthService } from '../server/auth'
-import { createHandler, createMvpHandler } from '../server/app'
+import { createHandler, createMvpHandler, hideUnpaidDelivery } from '../server/app'
 import { MemoryMarketplace } from '../server/marketplace'
 
 const client = privateKeyToAccount(`0x${'11'.repeat(32)}`)
@@ -52,17 +52,45 @@ describe('authenticated marketplace lifecycle', () => {
     expect((await req(handler, `/jobs/${job.id}/claim`, 'POST', clientCookie, {})).status).toBe(403)
     expect((await req(handler, `/jobs/${job.id}/claim`, 'POST', agentCookie, {})).status).toBe(200)
     expect((await req(handler, `/jobs/${job.id}/result`, 'POST', agentCookie, { contentType: 'text/html', content: '<script>x</script>' })).status).toBe(400)
-    expect((await req(handler, `/jobs/${job.id}/result`, 'POST', agentCookie, { contentType: 'text/plain', content: 'Completed report', artifactUrl: 'https://example.test/report.json' })).status).toBe(200)
+    const submitted = await req(handler, `/jobs/${job.id}/result`, 'POST', agentCookie, { contentType: 'text/plain', content: 'Completed report', artifactUrl: 'https://example.test/report.json' })
+    expect(submitted.status).toBe(200)
+    expect(JSON.stringify(await submitted.json())).toContain('Completed report')
+    const unpaidJob = await req(handler, `/jobs/${job.id}`, 'GET', clientCookie)
+    const unpaidBody = await unpaidJob.text()
+    expect(unpaidBody).not.toContain('Completed report')
+    expect(unpaidBody).not.toContain('report.json')
+    const unpaidPayment = await req(handler, `/jobs/${job.id}/payment`, 'GET', clientCookie)
+    expect((await unpaidPayment.json() as { terms: { deliverableUrl: string } }).terms.deliverableUrl).toBe('')
     expect((await req(handler, `/jobs/${job.id}/reviews`, 'POST', clientCookie, { rating: 5, comment: 'Useful result' })).status).toBe(200)
     const payment = await req(handler, `/jobs/${job.id}/payments/verify`, 'POST', clientCookie, { txHash: HASH })
     expect(payment.status).toBe(200)
     expect(paymentInput).toEqual(expect.objectContaining({ jobId: job.id, txHash: HASH, sender: client.address, recipient: agent.address, amountBaseUnits: 25_000_000n }))
     const body = await payment.json() as { state: string; terms: { chainId: number; tokenAddress: string; amountBaseUnits: string } }
     expect(body.state).toBe('confirmed'); expect(body.terms.chainId).toBe(8453); expect(body.terms.amountBaseUnits).toBe('25000000')
+    expect((body.terms as { deliverableUrl: string }).deliverableUrl).toBe('https://example.test/report.json')
+    expect(JSON.stringify(await (await req(handler, `/jobs/${job.id}`, 'GET', clientCookie)).json())).toContain('Completed report')
   })
 })
 
 describe('upstream facade', () => {
+  test('redacts old upstream unpaid delivery fields without changing confirmed receipts', () => {
+    const url = 'https://example.test/secret.mp4'
+    expect(hideUnpaidDelivery('/jobs/1', { job: { state: 'submitted', result: { content: 'secret', artifactUrl: url } } })).toEqual({ job: { state: 'submitted', result: null } })
+    expect(hideUnpaidDelivery('/jobs/1/payment', { state: 'payable', terms: { deliverableUrl: url } })).toEqual({ state: 'payable', terms: { deliverableUrl: '' } })
+    expect(hideUnpaidDelivery('/jobs/1/payment', { state: 'confirmed', terms: { deliverableUrl: url } })).toEqual({ state: 'confirmed', terms: { deliverableUrl: url } })
+    expect(hideUnpaidDelivery('/jobs/1', { job: { state: 'paid', result: { content: 'secret', artifactUrl: url } } })).toEqual({ job: { state: 'paid', result: { content: 'secret', artifactUrl: url } } })
+    expect(hideUnpaidDelivery('/jobs/1', { state: { stage: 'delivered', delivery: { publicRef: 'swarm://secret' } }, observations: [{ record: { publicRef: 'swarm://secret' } }] })).toEqual({ state: { stage: 'delivered' } })
+    expect(hideUnpaidDelivery('/jobs', { jobs: [{ publicState: { delivery: { publicRef: 'swarm://secret' } } }] })).toEqual({ jobs: [{ publicState: {} }] })
+  })
+  test('gateway response cannot expose a finalized upstream delivery before payment', async () => {
+    const handler = createHandler('https://example.com/api/desk/public', (async () => Response.json({ state: { stage: 'delivered', delivery: { publicRef: 'swarm://secret' } }, terms: { deliverableUrl: 'https://example.test/secret.mp4' }, observations: [{ record: { publicRef: 'swarm://secret' } }] })) as typeof fetch)
+    const response = await req(handler, '/jobs/one')
+    expect(response.status).toBe(200)
+    const body = await response.text()
+    expect(body).not.toContain('swarm://secret')
+    expect(body).not.toContain('secret.mp4')
+    expect(body).toContain('delivered')
+  })
   test('fails closed and only forwards txHash across the payment boundary', async () => {
     let calls = 0
     const handler = createHandler('https://example.com/public', (async (_url, init) => { calls++; expect(JSON.parse(String(init?.body))).toEqual({ txHash: HASH }); return Response.json({ state: 'pending' }) }) as typeof fetch)

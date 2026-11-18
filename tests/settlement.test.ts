@@ -19,6 +19,11 @@ import {
 } from '@/settlement'
 
 const config = BASE_MAINNET_CONFIG
+test('Base mainnet uses Circle native USDC with six decimals', () => {
+  expect(config.chainId).toBe(8453)
+  expect(config.token.address).toBe(getAddress('0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'))
+  expect(config.token.decimals).toBe(6)
+})
 const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
 const sender = getAddress('0x00000000000000000000000000000000000000a1')
 const recipient = getAddress('0x00000000000000000000000000000000000000b2')

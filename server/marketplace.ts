@@ -88,6 +88,11 @@ export class MemoryMarketplace {
     if (job.clientAddress !== session.address && job.agentAddress !== session.address) throw denied('Job ownership required')
     return job
   }
+  /** The agent can inspect its submission; the client receives it only after verified payment. */
+  visibleJob(session: Session, id: string): JobRequest {
+    const job = this.getJob(session, id)
+    return session.role === 'client' && job.state !== 'paid' ? { ...job, result: null } : job
+  }
   hire(session: Session, id: string, input: Record<string, unknown>): JobRequest {
     own(session, 'client'); const job = this.getJob(session, id)
     if (job.state !== 'open') throw conflict('Only an open job can be hired')
@@ -123,7 +128,7 @@ export class MemoryMarketplace {
     if (!['submitted', 'reviewed', 'paid'].includes(job.state) || !job.agentAddress) throw conflict('Job is not payable')
     const agent = this.agent(job.agentAddress)
     if (!agent) throw conflict('Agent payout profile is unavailable')
-    return { jobKey: job.id, jobReference: job.id, deliverableUrl: job.result?.artifactUrl ?? '', recipientName: agent.displayName, recipientAddress: agent.payoutAddress, clientAddress: job.clientAddress, chainId: 8453, tokenAddress: BASE_MAINNET_CONFIG.token.address, amountBaseUnits: job.budgetBaseUnits, amountDisplay: formatBaseUnits(8453, BigInt(job.budgetBaseUnits)), interfaceId: PAYMENT_INTERFACE_ID }
+    return { jobKey: job.id, jobReference: job.id, deliverableUrl: job.state === 'paid' ? job.result?.artifactUrl ?? '' : '', recipientName: agent.displayName, recipientAddress: agent.payoutAddress, clientAddress: job.clientAddress, chainId: 8453, tokenAddress: BASE_MAINNET_CONFIG.token.address, amountBaseUnits: job.budgetBaseUnits, amountDisplay: formatBaseUnits(8453, BigInt(job.budgetBaseUnits)), interfaceId: PAYMENT_INTERFACE_ID }
   }
   async verifyPayment(session: Session, id: string, txHash: Hash, verifier: PaymentVerifier): Promise<PaymentCheck> {
     const terms = this.terms(session, id)

@@ -1,39 +1,77 @@
 import { useEffect, useState } from 'react'
-import { Card, FullValue, PrimaryButton, Row } from '@/components/settlement/ui'
+import { ArrowUpRight, LockKeyhole, ShieldCheck, Wallet } from 'lucide-react'
 import { authenticate, marketplaceApi } from '@/lib/marketplace-api'
 import type { InjectedProvider } from '@/lib/lifecycle-wallet'
-import type { AgentProfile, JobRequest, MarketplaceRole } from '@/types/marketplace'
+import type { AgentProfile } from '@/types/marketplace'
 
-const inputClass = 'rounded-xl border p-3'
-const emptyJob = { skill: '', title: '', description: '', budgetBaseUnits: '', deadline: '', parameters: '{}' }
-
-/** Authenticated MVP workspace. All rendered job and result content remains inert text. */
+/** Public Akira commission entrance. The API does not yet publish a fixed service price. */
 export function HiringBoard() {
-  const [role, setRole] = useState<MarketplaceRole | null>(null), [address, setAddress] = useState('')
-  const [agents, setAgents] = useState<AgentProfile[]>([]), [jobs, setJobs] = useState<JobRequest[]>([]), [selected, setSelected] = useState<JobRequest | null>(null)
-  const [message, setMessage] = useState('Browse public agents and available jobs.'), [draft, setDraft] = useState(emptyJob)
-  const [profile, setProfile] = useState({ displayName: '', bio: '', skills: '', payoutAddress: '' })
-  const refresh = async () => { const [a, j] = await Promise.all([marketplaceApi.agents(), marketplaceApi.jobs()]); setAgents(a.agents); setJobs(j.jobs) }
-  useEffect(() => { void refresh().catch(error => setMessage(error instanceof Error ? error.message : 'Public API unavailable')) }, [])
-  async function run(work: () => Promise<void>) { try { await work() } catch (error) { setMessage(error instanceof Error ? error.message : 'Request failed') } }
-  async function signIn(nextRole: MarketplaceRole) {
-    const provider = (window as Window & { ethereum?: InjectedProvider }).ethereum
-    if (!provider) throw new Error('Install an EIP-1193 wallet to authenticate.')
-    const session = await authenticate(provider, nextRole); setRole(session.role); setAddress(session.address); setMessage(`Authenticated as ${session.role}.`)
+  const [agents, setAgents] = useState<AgentProfile[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [address, setAddress] = useState('')
+  const [signing, setSigning] = useState(false)
+  const [briefOpen, setBriefOpen] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    void marketplaceApi.agents('Akira').then(({ agents }) => { if (alive) setAgents(agents) }).catch(e => { if (alive) setError(e instanceof Error ? e.message : 'Agent directory unavailable') }).finally(() => { if (alive) setLoading(false) })
+    return () => { alive = false }
+  }, [])
+  const akira = agents.find(agent => agent.displayName.trim().toLowerCase() === 'akira')
+
+  async function signIn() {
+    setSigning(true); setError('')
+    try {
+      const provider = (window as Window & { ethereum?: InjectedProvider }).ethereum
+      if (!provider) throw new Error('An EIP-1193 wallet is required to sign in.')
+      const session = await authenticate(provider, 'client')
+      setAddress(session.address)
+    } catch (e) { setError(e instanceof Error ? e.message : 'Could not sign in') }
+    finally { setSigning(false) }
   }
-  async function open(job: JobRequest) { const loaded = await marketplaceApi.job(job.id); setSelected(loaded.job) }
-  return <>
-    <Card><h2 className="font-display text-2xl">Cybazaar hiring desk</h2><p className="mt-2 text-sm text-ink/70">Authenticate with a signed message. Signing in never sends a transaction or exposes a private key.</p><div className="mt-4 flex gap-2"><PrimaryButton onClick={() => void run(() => signIn('client'))}>Sign in as client</PrimaryButton><PrimaryButton onClick={() => void run(() => signIn('agent'))}>Sign in as agent</PrimaryButton></div><p role="status" className="mt-3 text-sm">{message}</p>{address && <Row label={`Authenticated ${role}`}><FullValue value={address} /></Row>}</Card>
-    <Card><h2 className="font-display text-xl">Agent directory</h2>{agents.length === 0 && <p className="mt-2 text-sm">No agent profiles are published.</p>}{agents.map(agent => <article className="mt-4 border-t pt-3" key={agent.address}><h3 className="font-semibold">{agent.displayName}</h3><p className="whitespace-pre-wrap text-sm">{agent.bio}</p><p className="text-sm">Skills: {agent.skills.join(', ')}</p><FullValue value={agent.address} /></article>)}</Card>
-    {role === 'agent' && <Card><h2 className="font-display text-xl">Publish agent profile</h2><form className="mt-3 grid gap-3" onSubmit={event => { event.preventDefault(); void run(async () => { await marketplaceApi.profile({ ...profile, skills: profile.skills.split(',').map(v => v.trim()).filter(Boolean) }); await refresh(); setMessage('Agent profile saved for this local session.') }) }}><input required placeholder="Display name" className={inputClass} value={profile.displayName} onChange={e => setProfile({ ...profile, displayName: e.target.value })}/><textarea required placeholder="Bio" className={inputClass} value={profile.bio} onChange={e => setProfile({ ...profile, bio: e.target.value })}/><input required placeholder="Skills, comma separated" className={inputClass} value={profile.skills} onChange={e => setProfile({ ...profile, skills: e.target.value })}/><input required placeholder="Base USDC payout wallet" className={inputClass} value={profile.payoutAddress} onChange={e => setProfile({ ...profile, payoutAddress: e.target.value })}/><PrimaryButton type="submit">Save profile</PrimaryButton></form></Card>}
-    <Card><h2 className="font-display text-xl">Available jobs</h2>{jobs.length === 0 && <p className="mt-2 text-sm">No available jobs.</p>}{jobs.map(job => <article className="mt-4 border-t pt-3" key={job.id}><h3 className="font-semibold">{job.title}</h3><p className="whitespace-pre-wrap text-sm">{job.description}</p><p className="text-sm">{job.skill} · {job.budgetBaseUnits} USDC base units · {job.state}</p>{address && <PrimaryButton onClick={() => void run(() => open(job))}>Open job</PrimaryButton>}</article>)}</Card>
-    {role === 'client' && <Card><h2 className="font-display text-xl">Create job request</h2><form className="mt-3 grid gap-3" onSubmit={event => { event.preventDefault(); void run(async () => { const created = await marketplaceApi.create({ ...draft, deadline: Math.floor(new Date(draft.deadline).getTime() / 1000), parameters: JSON.parse(draft.parameters) }); setSelected(created.job); setDraft(emptyJob); await refresh() }) }}>{(['skill', 'title', 'description', 'budgetBaseUnits'] as const).map(key => <input key={key} required placeholder={key} className={inputClass} value={draft[key]} onChange={e => setDraft({ ...draft, [key]: e.target.value })}/>)}<input required type="datetime-local" className={inputClass} value={draft.deadline} onChange={e => setDraft({ ...draft, deadline: e.target.value })}/><textarea required aria-label="Job parameters JSON" className={inputClass} value={draft.parameters} onChange={e => setDraft({ ...draft, parameters: e.target.value })}/><PrimaryButton type="submit">Create job</PrimaryButton></form></Card>}
-    {selected && <Card><h2 className="font-display text-xl">Job workspace</h2><Row label="Job"><FullValue value={selected.id}/></Row><Row label="State">{selected.state}</Row><Row label="Parameters"><span className="whitespace-pre-wrap break-all">{JSON.stringify(selected.parameters)}</span></Row>{selected.result && <><Row label="Result type">{selected.result.contentType}</Row><Row label="Result"><span className="whitespace-pre-wrap break-all">{selected.result.content}</span></Row>{selected.result.artifactUrl && <a target="_blank" rel="noopener noreferrer" className="underline" href={selected.result.artifactUrl}>Open result artifact</a>}</>}
-      {role === 'client' && selected.state === 'open' && <div className="mt-4 grid gap-2">{agents.map(agent => <PrimaryButton key={agent.address} onClick={() => void run(async () => { const r = await marketplaceApi.action(selected.id, 'hire', { agentAddress: agent.address }); setSelected(r.job); await refresh() })}>Hire {agent.displayName}</PrimaryButton>)}</div>}
-      {role === 'agent' && selected.state === 'hired' && <PrimaryButton onClick={() => void run(async () => setSelected((await marketplaceApi.action(selected.id, 'claim')).job))}>Accept job</PrimaryButton>}
-      {role === 'agent' && selected.state === 'accepted' && <form className="mt-4 grid gap-2" onSubmit={event => { event.preventDefault(); const data = new FormData(event.currentTarget); void run(async () => setSelected((await marketplaceApi.action(selected.id, 'result', { contentType: data.get('contentType'), content: data.get('content'), artifactUrl: data.get('artifactUrl') || undefined })).job)) }}><select name="contentType" className={inputClass}><option>text/plain</option><option>application/json</option></select><textarea required name="content" placeholder="Result" className={inputClass}/><input name="artifactUrl" placeholder="Optional HTTPS artifact URL" className={inputClass}/><PrimaryButton type="submit">Submit result</PrimaryButton></form>}
-      {role === 'client' && selected.state === 'submitted' && <form className="mt-4 grid gap-2" onSubmit={event => { event.preventDefault(); const data = new FormData(event.currentTarget); void run(async () => setSelected((await marketplaceApi.action(selected.id, 'reviews', { rating: Number(data.get('rating')), comment: data.get('comment') })).job)) }}><input required name="rating" type="number" min="1" max="5" className={inputClass}/><textarea required name="comment" placeholder="Review" className={inputClass}/><PrimaryButton type="submit">Post review</PrimaryButton></form>}
-      {role === 'client' && ['submitted', 'reviewed', 'paid'].includes(selected.state) && <a className="mt-4 inline-block underline" href={`/jobs/${encodeURIComponent(selected.id)}`}>Review and pay in Base USDC</a>}
-    </Card>}
-  </>
+  function openBrief() { setBriefOpen(true); document.getElementById('brief')?.scrollIntoView() }
+
+  return <div className="cyba-home">
+    <section className="cyba-hero" aria-labelledby="cyba-title">
+      <div className="cyba-hero-copy">
+        <p className="cyba-eyebrow">Cybazaar / Commission 001</p>
+        <h2 id="cyba-title">Hire an agent.<br/><em>Own the result.</em></h2>
+        <p className="cyba-lead">Akira turns a creative brief into an anime reel. Follow the work from request to reviewed delivery, then pay in Base USDC to unlock your file.</p>
+        <div className="cyba-actions"><button className="cyba-button" onClick={openBrief}>See brief requirements <ArrowUpRight size={17}/></button><a className="cyba-text-link" href="/akira">See the dated sample and provenance <ArrowUpRight size={15}/></a></div>
+      </div>
+      <div className="cyba-hero-art"><img src="/akira-sample-poster.jpg" alt="Still from Akira's dated sample reel" /><div className="cyba-art-caption"><span>01 / AKIRA</span><span>Historical sample</span></div></div>
+    </section>
+
+    <section className="cyba-section cyba-steps" aria-label="How commissions work">
+      <div><span>01</span><strong>Send the brief</strong><p>Tell Akira what the reel should say and supply the source material.</p></div>
+      <div><span>02</span><strong>Review and release</strong><p>The operator checks the finished work and releases a summary to you.</p></div>
+      <div><span>03</span><strong>Pay to unlock</strong><p>Pay the agreed Base USDC amount after release. The file appears after verification.</p></div>
+    </section>
+
+    <section className="cyba-section cyba-agent" aria-labelledby="agent-heading">
+      <div><p className="cyba-eyebrow">The specialist</p><h2 id="agent-heading">Akira</h2><p>Anime reel production</p></div>
+      <div className="cyba-agent-detail">
+        {loading ? <p role="status">Checking the live agent directory…</p> : akira ? <><p>{akira.bio}</p><p className="cyba-muted">Skills: {akira.skills.join(' · ')}</p><p className="cyba-mono">{akira.address}</p></> : <p role="status">Akira is not listed in the live directory yet. The dated sample remains available.</p>}
+        <a className="cyba-text-link" href="/akira">See sample and provenance <ArrowUpRight size={15}/></a>
+      </div>
+    </section>
+
+    <section id="brief" className="cyba-section cyba-brief" aria-labelledby="brief-heading">
+      <div><p className="cyba-eyebrow">Your commission</p><h2 id="brief-heading">Start with a brief.</h2><p className="cyba-muted">No wallet transaction is needed to prepare it. Signing in only proves which wallet owns the request.</p></div>
+      <div className="cyba-brief-card">
+        {!briefOpen ? <button className="cyba-button" onClick={() => setBriefOpen(true)}>See brief requirements <ArrowUpRight size={17}/></button> : <>
+          <label htmlFor="brief-title">Reel title</label><input id="brief-title" className="cyba-field" placeholder="What is this reel about?" />
+          <label htmlFor="brief-story">Story and direction</label><textarea id="brief-story" className="cyba-field" rows={5} placeholder="Audience, key beats, tone and references" />
+          <label htmlFor="brief-inputs">Source material</label><textarea id="brief-inputs" className="cyba-field" rows={3} placeholder="Describe the source files you will provide" />
+          <div className="cyba-terms"><LockKeyhole size={18}/><p>Exact price and delivery terms have not been published by the service. Hire requests are unavailable until they are.</p></div>
+          <button className="cyba-button cyba-disabled" disabled>Send hire request · unavailable</button>
+        </>}
+      </div>
+    </section>
+
+    <section className="cyba-section cyba-identity" aria-labelledby="identity-heading"><ShieldCheck size={25}/><div><h2 id="identity-heading">A traceable commission</h2><p>Each future job will carry its own identity, artifact and payment evidence. The sample shows the format; it is not proof of your commission.</p></div><a href="/akira">Inspect the sample <ArrowUpRight size={15}/></a></section>
+
+    <section className="cyba-section cyba-signin" aria-labelledby="signin-heading"><Wallet size={23}/><div><h2 id="signin-heading">Client wallet</h2><p>Sign a message to identify yourself. Signing in moves no funds.</p>{address && <p className="cyba-mono" role="status">Signed in: {address}</p>}{error && <p className="cyba-error" role="alert">{error}</p>}</div><button className="cyba-button cyba-button-outline" disabled={signing} onClick={() => void signIn()}>{signing ? 'Waiting for signature…' : address ? 'Change wallet' : 'Sign in'}</button></section>
+  </div>
 }

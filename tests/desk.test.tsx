@@ -6,6 +6,7 @@ import { describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { getAddress } from 'viem'
 import { ReviewDetails } from '@/components/settlement/ReviewDetails'
+import { ReviewCard } from '@/components/settlement/ReviewCard'
 import { createDeskController, receiptMatchesTerms, type DeskView } from '@/lib/desk-payment-controller'
 import { toSettlementJob } from '@/lib/desk-job'
 import { createHiringDeskClient, parseTerms, resolveApiBase, type HiringDeskClient } from '@/lib/hiring-desk-api'
@@ -13,7 +14,7 @@ import { readJobRef } from '@/lib/route'
 import { createKeyValueLedger, createMemoryStore } from '@/settlement'
 import { PAYMENT_INTERFACE_ID, type Hex, type PaymentStatus, type PublicPaymentTerms } from '@/types/desk'
 
-const USDC = getAddress('0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48')
+const USDC = getAddress('0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913')
 const recipient = getAddress('0x00000000000000000000000000000000000000b2')
 const client = getAddress('0x00000000000000000000000000000000000000a1')
 const attacker = getAddress('0x00000000000000000000000000000000000000c3')
@@ -35,6 +36,16 @@ const terms: PublicPaymentTerms = {
   interfaceId: PAYMENT_INTERFACE_ID,
 }
 const receipt = { txHash: HASH, sender: client, recipient, tokenAddress: USDC, chainId: 8453, amountBaseUnits: '25500000', blockNumber: '99' }
+
+test('unpaid payable terms keep the file locked and permit the exact transfer', () => {
+  const locked = { ...terms, deliverableUrl: '' }
+  expect(parseTerms(locked)).not.toBeNull()
+  const html = renderToStaticMarkup(<ReviewCard job={toSettlementJob(locked)} isConnected wrongNetwork={false} balance={100_000_000n} balanceError={false} busy={false} isSwitching={false} switchError={null} onSwitch={() => {}} onPay={() => {}} />)
+  expect(html).toContain('Locked until this payment is verified')
+  expect(html).toContain('Pay 25.50 USDC to unlock')
+  expect(html).not.toContain('disabled=""')
+  expect(html).not.toContain('deliverables.test')
+})
 
 interface Call { url: string; init: RequestInit }
 function fakeFetch(responses: Array<{ status?: number; body: unknown }>, calls: Call[] = []): typeof fetch {
@@ -128,7 +139,8 @@ describe('server terms are authoritative', () => {
     expect(html).toContain(recipient)
     expect(html).toContain('Atlas Agent')
     expect(html).toContain('JOB-1042')
-    expect(html).toContain('https://deliverables.test/job-1042')
+    expect(html).toContain('Locked until this payment is verified')
+    expect(html).not.toContain('https://deliverables.test/job-1042')
     expect(html).toContain('Base Mainnet')
     expect(html).toContain('8453')
     expect(html).toContain(USDC)

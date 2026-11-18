@@ -27,11 +27,11 @@ export function ReviewCard(props: ReviewCardProps) {
   const { job } = props
   const config = getNetworkConfig(job.chainId)
   const amount = formatBaseUnitsPadded(job.chainId, job.amountBaseUnits)
-  const deliverableOk = isHttpsUrl(job.deliverableUrl)
+  const deliverableOk = !job.deliverableUrl || isHttpsUrl(job.deliverableUrl)
   const insufficient = props.balance !== undefined && props.balance < job.amountBaseUnits
 
   let blocker: string | null = null
-  if (!deliverableOk) blocker = 'The deliverable is not available yet, so payment is disabled.'
+  if (!deliverableOk) blocker = 'The delivery terms contain an invalid link. Payment is disabled.'
   else if (!props.isConnected) blocker = null
   else if (props.wrongClient) blocker = `This job must be paid from the client wallet ${job.clientAddress ?? ''}. Switch accounts in your wallet.`
   else if (props.wrongNetwork) blocker = `Your wallet is on chain ${props.walletChainId}. Switch to ${config.name} to continue.`
@@ -66,7 +66,7 @@ export function ReviewCard(props: ReviewCardProps) {
           </PrimaryButton>
         ) : (
           <PrimaryButton onClick={props.onPay} disabled={Boolean(blocker) || props.busy}>
-            Pay {amount} {config.token.symbol}
+            Pay {amount} {config.token.symbol} to unlock
           </PrimaryButton>
         )}
       </div>
