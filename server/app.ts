@@ -1,4 +1,5 @@
 import type { Hash } from 'viem'
+import { envelopeHeaders } from './engine-envelope'
 import { AuthService, type Session } from './auth'
 import { MemoryMarketplace, type PaymentVerifier } from './marketplace'
 
@@ -122,33 +123,111 @@ export function createMvpHandler(options: MvpHandlerOptions) {
   }
 }
 
-/** Production facade: fixed upstream, route allow-list, bounded bodies, no fixture fallback. */
-export function createHandler(upstream: string, requestFetch: typeof fetch = fetch) {
+export interface HandlerOptions {
+  secret: string
+  auth?: AuthService
+  requestFetch?: typeof fetch
+  now?: () => number
+}
+
+const marketStatuses = new Set(['triage', 'active', 'review', 'released', 'paid', 'cancelled'])
+function projectJob(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid market job')
+  const j = value as Record<string, unknown>
+  if (!marketStatuses.has(String(j.status)) || typeof j.id !== 'string') throw new Error('Invalid market job')
+  const out: Record<string, unknown> = {}
+  for (const key of ['id', 'providerId', 'title', 'priceAtomic', 'status', 'summary', 'artifactSha256', 'deliveryPending', 'paymentTx', 'pendingPaymentTx']) if (key in j) out[key] = j[key]
+  if (!['released', 'paid'].includes(String(j.status))) { out.summary = null; out.artifactSha256 = null }
+  if (j.status === 'paid' && typeof j.downloadRef === 'string' && /^swarm:\/\/[0-9a-f]{64}$/.test(j.downloadRef)) out.downloadRef = j.downloadRef
+  if (j.status === 'paid' && Array.isArray(j.evidenceRefs)) out.evidenceRefs = j.evidenceRefs.filter(r => typeof r === 'string' && /^arkiv:/.test(r))
+  return out
+}
+function projectResponse(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid upstream response')
+  const v = value as Record<string, unknown>
+  const out: Record<string, unknown> = {}
+  if ('job' in v) out.job = projectJob(v.job)
+  if (Array.isArray(v.jobs)) out.jobs = v.jobs.map(projectJob)
+  if (Array.isArray(v.agents)) out.agents = v.agents.map(raw => {
+    if (!raw || typeof raw !== 'object') throw new Error('Invalid service')
+    const a = raw as Record<string, unknown>; const profile: Record<string, unknown> = {}
+    for (const key of ['id', 'name', 'serviceTitle', 'description', 'priceAtomic', 'payoutWallet', 'ensName', 'agentId', 'identityBound']) profile[key] = a[key]
+    return profile
+  })
+  if (v.terms && typeof v.terms === 'object') {
+    const terms = v.terms as Record<string, unknown>; out.terms = Object.fromEntries(['chainId', 'tokenAddress', 'sender', 'recipient', 'amountAtomic', 'jobId'].map(k => [k, terms[k]]))
+  }
+  if (!Object.keys(out).length) throw new Error('Unsupported upstream response')
+  return out
+}
+function enforceSameOrigin(request: Request): void {
+  const origin = request.headers.get('origin')
+  if (request.headers.get('sec-fetch-site') === 'cross-site' || (origin && origin !== new URL(request.url).origin)) throw Object.assign(new Error('Cross-origin request denied'), { status: 403 })
+}
+
+/** Production v4 facade. Wallet sessions stay local; the engine receives a signed, fixed-route request. */
+export function createHandler(upstream: string, options: HandlerOptions) {
   const base = new URL(upstream)
-  if (base.protocol !== 'https:' && base.hostname !== 'localhost' && base.hostname !== '127.0.0.1') throw new Error('HIRING_DESK_UPSTREAM must use HTTPS')
-  if (base.username || base.password || base.search || base.hash) throw new Error('Invalid upstream URL')
+  if (base.protocol !== 'https:' && !(base.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(base.hostname))) throw new Error('HIRING_DESK_UPSTREAM must use HTTPS or loopback HTTP')
+  if (base.username || base.password || base.search || base.hash || base.pathname.replace(/\/$/, '') !== '/api/desk/market') throw new Error('HIRING_DESK_UPSTREAM must end in /api/desk/market')
+  if (Buffer.byteLength(options.secret) < 32) throw new Error('CYBA_ENVELOPE_SECRET must contain at least 32 bytes')
+  const auth = options.auth ?? new AuthService(Date.now, true)
+  const requestFetch = options.requestFetch ?? fetch
+  const now = options.now ?? Date.now
   return async (request: Request): Promise<Response> => {
     const url = new URL(request.url)
-    if (url.pathname === '/api/health' && request.method === 'GET') return json({ service: 'cybazaar-gateway', status: 'ok', durableAuthority: 'HIRING_DESK_UPSTREAM', chainId: 8453 })
-    if (!url.pathname.startsWith('/api/')) return json({ error: 'Route not found' }, 404)
-    const path = url.pathname.slice(4)
-    const allowed = /^(?:\/auth\/(?:challenge|verify|session|logout)|\/profile|\/agents(?:\/[^/]+)?|\/jobs(?:\/[^/]+(?:\/(?:hire|claim|result|reviews|payment|payments\/(?:verify|reconcile)))?)?)$/.test(path)
-    if (!allowed || !['GET', 'POST', 'PUT'].includes(request.method)) return json({ error: 'Route not found' }, 404)
-    let body: string | undefined
-    if (request.method !== 'GET') {
-      try {
-        const parsed = await readJson(request, path.includes('/payments/') ? 256 : 32_000)
-        if (path.includes('/payments/') && (Object.keys(parsed).length !== 1 || typeof parsed.txHash !== 'string' || !TX_HASH.test(parsed.txHash))) throw Object.assign(new Error('Expected only a valid txHash'), { status: 400 })
-        body = JSON.stringify(parsed)
-      } catch (error) { const e = error as Error & { status?: number }; return json({ error: e.message }, e.status ?? 400) }
-    }
     try {
-      const headers = new Headers({ accept: 'application/json' }); if (body) headers.set('content-type', 'application/json')
-      const cookie = request.headers.get('cookie')
-      if (cookie && (path.startsWith('/auth/') || path === '/profile' || path.startsWith('/jobs'))) headers.set('cookie', cookie)
-      const response = await requestFetch(`${base.href.replace(/\/$/, '')}${path}${url.search}`, { method: request.method, headers, body, redirect: 'error', signal: AbortSignal.timeout(10_000) })
-      const responseHeaders: HeadersInit = {}; const setCookie = response.headers.get('set-cookie'); if (setCookie) responseHeaders['set-cookie'] = setCookie
-      return json(hideUnpaidDelivery(path, await response.json()), response.status, responseHeaders)
-    } catch { return json({ error: 'Hiring Desk upstream unavailable' }, 502) }
+      if (url.pathname === '/api/health' && request.method === 'GET') return json({ service: 'cybazaar-gateway', status: 'ok', storage: 'engine-postgres', upstreamHealth: 'not-probed', chainId: 8453 })
+      if (!url.pathname.startsWith('/api/')) return json({ error: 'Route not found' }, 404)
+      const path = url.pathname.slice(4)
+      if (request.method !== 'GET') enforceSameOrigin(request)
+      // Challenges, cookies and sessions never leave the gateway.
+      if (path === '/auth/challenge' && request.method === 'POST') {
+        try { return json(auth.challenge(await readJson(request))) }
+        catch (error) { const e = error as Error & { status?: number }; return json({ error: e.message }, e.status ?? 400) }
+      }
+      if (path === '/auth/verify' && request.method === 'POST') {
+        let result: Awaited<ReturnType<AuthService['verify']>>
+        try { result = await auth.verify(await readJson(request)) }
+        catch (error) { const e = error as Error & { status?: number }; return json({ error: e.message }, e.status ?? 401) }
+        return json({ address: result.session.address, role: result.session.role, expiresAt: result.session.expiresAt }, 200, { 'set-cookie': result.cookie })
+      }
+      if (path === '/auth/session' && request.method === 'GET') {
+        const session = requireSession(auth, request)
+        return json({ address: session.address, role: session.role, expiresAt: session.expiresAt })
+      }
+      if (path === '/auth/logout' && request.method === 'POST') return json({ ok: true }, 200, { 'set-cookie': auth.logout(request) })
+      const publicAgents = path === '/agents' && request.method === 'GET'
+      const list = path === '/jobs' && ['GET', 'POST'].includes(request.method)
+      const detail = /^\/jobs\/[a-zA-Z0-9_-]+$/.test(path) && request.method === 'GET'
+      const terms = /^\/jobs\/[a-zA-Z0-9_-]+\/payment-terms$/.test(path) && request.method === 'GET'
+      const payment = /^\/jobs\/[a-zA-Z0-9_-]+\/payment$/.test(path) && request.method === 'POST'
+      if (!publicAgents && !list && !detail && !terms && !payment) return json({ error: 'Route not found' }, 404)
+      if ([...url.searchParams.keys()].some(key => key !== 'q') || (url.search && !publicAgents)) return json({ error: 'Unsupported query' }, 400)
+      const session = publicAgents ? null : requireSession(auth, request, 'client')
+      let body = ''
+      if (request.method === 'POST') {
+        const parsed = await readJson(request, payment ? 256 : 32_000)
+        const keys = Object.keys(parsed)
+        if (payment) {
+          if (keys.length !== 1 || typeof parsed.txHash !== 'string' || !TX_HASH.test(parsed.txHash)) return json({ error: 'Expected only a valid txHash' }, 400)
+        } else if (keys.some(k => !['providerId', 'title', 'brief', 'requestKey'].includes(k))) return json({ error: 'Unexpected job field' }, 400)
+        body = JSON.stringify(parsed)
+      }
+      const target = new URL(base.href.replace(/\/$/, '') + path + url.search)
+      const headers = session ? envelopeHeaders({ method: request.method, path: target.pathname + target.search, body, wallet: session.address, timestamp: now() }, options.secret) : new Headers({ accept: 'application/json' })
+      const response = await requestFetch(target.href, { method: request.method, headers, ...(body ? { body } : {}), redirect: 'error', signal: AbortSignal.timeout(10_000) })
+      const parsed = await readJson(response as unknown as Request, 128_000)
+      if (!response.ok) {
+        const error = parsed.error
+        const message = typeof error === 'string' ? error : error && typeof error === 'object' && typeof (error as Record<string, unknown>).message === 'string' ? (error as Record<string, unknown>).message : 'Engine request failed'
+        return json({ error: message }, response.status)
+      }
+      return json(projectResponse(parsed), response.status)
+    } catch (error) {
+      const e = error as Error & { status?: number }
+      if (e.status) return json({ error: e.message }, e.status)
+      return json({ error: 'Hiring Desk upstream unavailable' }, 502)
+    }
   }
 }

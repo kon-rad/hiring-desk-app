@@ -1,24 +1,49 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ArrowUpRight, LockKeyhole, ShieldCheck, Wallet } from 'lucide-react'
-import { authenticate, marketplaceApi } from '@/lib/marketplace-api'
+import { authenticate } from '@/lib/marketplace-api'
 import type { InjectedProvider } from '@/lib/lifecycle-wallet'
-import type { AgentProfile } from '@/types/marketplace'
+import type { MarketProfile } from '@/types/market-v4'
+import { marketV4 } from '@/lib/market-v4'
+import { formatUnits } from 'viem'
 
-/** Public Akira commission entrance. The API does not yet publish a fixed service price. */
+/** One fixed service, priced and authorized by the durable engine authority. */
 export function HiringBoard() {
-  const [agents, setAgents] = useState<AgentProfile[]>([])
+  const [agents, setAgents] = useState<MarketProfile[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [address, setAddress] = useState('')
   const [signing, setSigning] = useState(false)
   const [briefOpen, setBriefOpen] = useState(false)
 
+  const [title, setTitle] = useState('')
+  const [brief, setBrief] = useState('')
+  const [sources, setSources] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const requestKey = useRef<string | null>(null)
   useEffect(() => {
     let alive = true
-    void marketplaceApi.agents('Akira').then(({ agents }) => { if (alive) setAgents(agents) }).catch(e => { if (alive) setError(e instanceof Error ? e.message : 'Agent directory unavailable') }).finally(() => { if (alive) setLoading(false) })
+    void marketV4.profiles().then(agents => { if (alive) setAgents(agents) }).catch(e => { if (alive) setError(e instanceof Error ? e.message : 'Agent directory unavailable') }).finally(() => { if (alive) setLoading(false) })
     return () => { alive = false }
   }, [])
-  const akira = agents.find(agent => agent.displayName.trim().toLowerCase() === 'akira')
+  const akira = agents.find(agent => agent.name.trim().toLowerCase() === 'akira' && agent.identityBound && /^[1-9][0-9]*$/.test(agent.priceAtomic))
+  useEffect(() => { void marketV4.session().then(s => setAddress(s.address)).catch(() => {}) }, [])
+  useEffect(() => {
+    const provider = (window as Window & { ethereum?: InjectedProvider }).ethereum
+    const invalidate = () => { setAddress(''); requestKey.current = null }
+    provider?.on?.('accountsChanged', invalidate); provider?.on?.('disconnect', invalidate)
+    return () => { provider?.removeListener?.('accountsChanged', invalidate); provider?.removeListener?.('disconnect', invalidate) }
+  }, [])
+  function edit(set: (value: string) => void, value: string) { requestKey.current = null; set(value) }
+  async function hire() {
+    if (!akira || !address || submitting) return
+    setSubmitting(true); setError('')
+    try {
+      requestKey.current ??= crypto.randomUUID()
+      const job = await marketV4.create({ providerId: akira.id, title: title.trim(), brief: `${brief.trim()}${sources.trim() ? '\n\nSource material:\n' + sources.trim() : ''}`, requestKey: requestKey.current })
+      window.location.assign(`/jobs/${encodeURIComponent(job.id)}`)
+    } catch (e) { setError(e instanceof Error ? e.message : 'Could not submit commission') }
+    finally { setSubmitting(false) }
+  }
 
   async function signIn() {
     setSigning(true); setError('')
@@ -52,7 +77,7 @@ export function HiringBoard() {
     <section className="cyba-section cyba-agent" aria-labelledby="agent-heading">
       <div><p className="cyba-eyebrow">The specialist</p><h2 id="agent-heading">Akira</h2><p>Anime reel production</p></div>
       <div className="cyba-agent-detail">
-        {loading ? <p role="status">Checking the live agent directory…</p> : akira ? <><p>{akira.bio}</p><p className="cyba-muted">Skills: {akira.skills.join(' · ')}</p><p className="cyba-mono">{akira.address}</p></> : <p role="status">Akira is not listed in the live directory yet. The dated sample remains available.</p>}
+        {loading ? <p role="status">Checking the live agent directory…</p> : akira ? <><p>{akira.description}</p><p className="cyba-muted">Service: {akira.serviceTitle}</p><p className="cyba-mono">{akira.ensName} · Agent {akira.agentId}</p></> : <p role="status">Akira is not listed in the live directory yet. The dated sample remains available.</p>}
         <a className="cyba-text-link" href="/akira">See sample and provenance <ArrowUpRight size={15}/></a>
       </div>
     </section>
@@ -61,16 +86,16 @@ export function HiringBoard() {
       <div><p className="cyba-eyebrow">Your commission</p><h2 id="brief-heading">Start with a brief.</h2><p className="cyba-muted">No wallet transaction is needed to prepare it. Signing in only proves which wallet owns the request.</p></div>
       <div className="cyba-brief-card">
         {!briefOpen ? <button className="cyba-button" onClick={() => setBriefOpen(true)}>See brief requirements <ArrowUpRight size={17}/></button> : <>
-          <label htmlFor="brief-title">Reel title</label><input id="brief-title" className="cyba-field" placeholder="What is this reel about?" />
-          <label htmlFor="brief-story">Story and direction</label><textarea id="brief-story" className="cyba-field" rows={5} placeholder="Audience, key beats, tone and references" />
-          <label htmlFor="brief-inputs">Source material</label><textarea id="brief-inputs" className="cyba-field" rows={3} placeholder="Describe the source files you will provide" />
-          <div className="cyba-terms"><LockKeyhole size={18}/><p>Exact price and delivery terms have not been published by the service. Hire requests are unavailable until they are.</p></div>
-          <button className="cyba-button cyba-disabled" disabled>Send hire request · unavailable</button>
+          <label htmlFor="brief-title">Reel title</label><input id="brief-title" className="cyba-field" maxLength={200} value={title} onChange={e => edit(setTitle, e.target.value)} placeholder="What is this reel about?" />
+          <label htmlFor="brief-story">Story and direction</label><textarea id="brief-story" className="cyba-field" rows={5} maxLength={8000} value={brief} onChange={e => edit(setBrief, e.target.value)} placeholder="Audience, key beats, tone and references" />
+          <label htmlFor="brief-inputs">Source material</label><textarea id="brief-inputs" className="cyba-field" rows={3} maxLength={1000} value={sources} onChange={e => edit(setSources, e.target.value)} placeholder="Public source links and references. No private files or credentials." />
+          <div className="cyba-terms"><LockKeyhole size={18}/><p>{akira ? `${formatUnits(BigInt(akira.priceAtomic), 6)} Base USDC, payable after operator Release. A request enters manual review; it does not start work or move funds automatically. No escrow or automatic refund is provided.` : 'Hire requests are unavailable until verified identity and fixed service terms are published.'}</p></div>
+          <button className="cyba-button" disabled={!akira || !address || !title.trim() || !brief.trim() || submitting} onClick={() => void hire()}>{submitting ? 'Submitting…' : !akira ? 'Send hire request · unavailable' : !address ? 'Sign in to request a commission' : 'Send hire request'}</button>
         </>}
       </div>
     </section>
 
-    <section className="cyba-section cyba-identity" aria-labelledby="identity-heading"><ShieldCheck size={25}/><div><h2 id="identity-heading">A traceable commission</h2><p>Each future job will carry its own identity, artifact and payment evidence. The sample shows the format; it is not proof of your commission.</p></div><a href="/akira">Inspect the sample <ArrowUpRight size={15}/></a></section>
+    <section className="cyba-section cyba-identity" aria-labelledby="identity-heading"><ShieldCheck size={25}/><div><h2 id="identity-heading">A traceable commission</h2><p>Each commission uses its own identity, reviewed artifact hash and payment evidence. The sample shows the format; it is not proof of your commission.</p></div><a href="/akira">Inspect the sample <ArrowUpRight size={15}/></a></section>
 
     <section className="cyba-section cyba-signin" aria-labelledby="signin-heading"><Wallet size={23}/><div><h2 id="signin-heading">Client wallet</h2><p>Sign a message to identify yourself. Signing in moves no funds.</p>{address && <p className="cyba-mono" role="status">Signed in: {address}</p>}{error && <p className="cyba-error" role="alert">{error}</p>}</div><button className="cyba-button cyba-button-outline" disabled={signing} onClick={() => void signIn()}>{signing ? 'Waiting for signature…' : address ? 'Change wallet' : 'Sign in'}</button></section>
   </div>
