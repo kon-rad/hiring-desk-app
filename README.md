@@ -1,76 +1,58 @@
-# Cybazaar MVP
+# Cybazaar
 
-Cybazaar is a small wallet-authenticated hiring marketplace. Clients browse agent profiles, create and assign jobs, review submitted results, leave reviews, and sign one ERC-20 USDC transfer from their browser wallet. Agents publish profiles, accept assigned work, and submit inert text/JSON results or an HTTPS artifact reference. The server—not the browser—decides whether payment is confirmed.
+Commission one configured agent service through a wallet-authenticated client. The operator approves the request on the existing board, completes the work, reviews the private MP4 and clicks Release. The client sees the summary and reviewed hash, then pays the exact Base USDC terms. Only independent engine verification and Swarm readback unlock the file.
 
-## Run locally
+This branch implements the client side of the v4 contract. It builds on PR #7's views and native Base USDC correction. A passing local test is not evidence of a deployed or paid commission.
 
-Prerequisites: Bun and an injected browser wallet.
+## Run the v4 client
 
-```bash
-bun install
-HIRING_DESK_DEV_MEMORY=1 bun run dev:server
-VITE_HIRING_DESK_API_URL=http://localhost:3001/api bun run dev
-bun run typecheck
-bun run build
-bun run test
+Use Bun, install the locked dependencies and run the persistent gateway behind the same origin as the frontend:
+
+```sh
+bun install --frozen-lockfile
+HIRING_DESK_UPSTREAM=https://engine.example/api/desk/market CYBA_ENVELOPE_SECRET="$SERVICE_SECRET" bun run start:server
+VITE_HIRING_DESK_API_URL=/api bun run dev
 ```
 
-`HIRING_DESK_DEV_MEMORY=1` is an explicit ephemeral development mode. Restarting the server clears profiles, jobs, sessions, reviews, and payment bindings. It uses a Base RPC only to verify submitted hashes; set `BASE_RPC_URL` to a reliable read-only provider for live use. No test fixtures are loaded.
+Supply `SERVICE_SECRET` through your protected service environment. It must match the engine's envelope secret and contain at least 32 bytes. Do not put it in a `VITE_` setting, repository, URL or browser. The default gateway bind is loopback port 3001; `PORT` changes it. The Vite development proxy forwards `/api` to that port. Production serves the built frontend and `/api` through one HTTPS reverse proxy.
 
-Production must set `HIRING_DESK_UPSTREAM=https://...` instead. The Bun service becomes an allow-listed facade over that durable authority and never falls back to memory or invented data. The upstream must implement the same authorization, lifecycle, uniqueness, and receipt-verification contract. Run it behind HTTPS so secure session cookies and wallet authentication have the expected transport boundary.
+`CYBA_COOKIE_SECURE=0` is allowed only for local HTTP development. Production requires Secure cookies and a durable upstream; `NODE_ENV=production` refuses memory mode or insecure cookies. Wallet challenges and 15-minute HttpOnly sessions stay in the Bun process. A restart requires wallet sign-in again. Jobs, payment reservations and delivery checkpoints remain in the engine's PostgreSQL authority.
 
-## API
+## Production API
 
-Public routes:
+| Route | Authority |
+|---|---|
+| `GET /api/health` | Gateway liveness only; it reports upstream health as not probed |
+| `POST /api/auth/challenge`, `/verify`, `/logout`; `GET /api/auth/session` | Local challenge/session service, never forwarded |
+| `GET /api/agents?q=` | Configured services whose identity/payout bindings pass engine verification |
+| `GET /api/jobs` | Authenticated client's jobs |
+| `POST /api/jobs` | `{ providerId, title, brief, requestKey }`; wallet is derived from the session |
+| `GET /api/jobs/:id` | Authenticated owning client's projected job |
+| `GET /api/jobs/:id/payment-terms` | Immutable authoritative terms after Release |
+| `POST /api/jobs/:id/payment` | Only `{ txHash }`; engine verifies or resumes the transaction/delivery |
 
-- `GET /api/health`
-- `GET /api/agents?q=` and `GET /api/agents/:address`
-- `GET /api/jobs?q=` returns available public summaries without parameters or results
+The gateway signs only these fixed engine routes. Its canonical envelope binds method, full path/query, SHA-256 of the exact body bytes, session wallet and millisecond timestamp. It sends `x-cyba-wallet`, `x-cyba-timestamp` and `x-cyba-signature` to `/api/desk/market`; cookies, browser identity headers and authentication routes are never proxied. Cross-origin mutations are rejected. Requests and responses are bounded. Upstream outages return 502 with no memory fallback.
 
-Authentication:
+The production API does not expose profile editing, provider claim/result/review mutations or operator actions. Those belong to the private engine workflow. Job status is `triage -> active -> review -> released -> paid`, with `cancelled` terminal. A pending transaction or confirmed-payment/delivery-pending checkpoint suppresses another Pay action. A browser hash hint is only a reconciliation aid and never decides paid state.
 
-- `POST /api/auth/challenge` — `{ address, role: "client" | "agent" }`
-- `POST /api/auth/verify` — `{ address, role, nonce, signature }`
-- `GET /api/auth/session`
-- `POST /api/auth/logout`
+## Payment and delivery
 
-The challenge binds the checksummed wallet, explicit role, random nonce, and five-minute expiry. A challenge is consumed before signature verification to stop races/replay. `viem.verifyMessage` verifies the signature. Successful verification creates a 15-minute opaque `HttpOnly; SameSite=Lax` cookie (`Secure` at the HTTPS authority). No private key enters this app.
+The configured token is native Base Mainnet USDC, chain `8453`, address `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`, six decimals. The engine decides payer, recipient and amount from immutable job terms; the browser signs a direct ERC-20 transfer. No escrow, automatic refunds or native ETH payment is provided.
 
-Authenticated lifecycle:
+An unpaid projection contains no artifact bytes, path, download URL or Swarm reference. After payment verification, the engine uploads the exact reviewed MP4 and checks downloaded bytes against its SHA-256. Only a paid job carrying a valid `swarm://` reference renders a public Swarm gateway download. Once published, the reference is public; this is pay-to-unlock publication, not a permanent access-control system. `evidenceRefs`, when returned by the engine, identify finalized server-attested Arkiv records. The server signer is not represented as the client wallet.
 
-- `PUT /api/profile` — agent profile and payout wallet
-- `POST /api/jobs` — client creates `{ skill, title, description, budgetBaseUnits, deadline, parameters }`
-- `GET /api/jobs/:id` — owning client or selected agent reads full request/result
-- `POST /api/jobs/:id/hire` — owning client selects `{ agentAddress }`
-- `POST /api/jobs/:id/claim` — selected agent accepts
-- `POST /api/jobs/:id/result` — selected agent submits `{ contentType, content, artifactUrl? }`
-- `POST /api/jobs/:id/reviews` — owning client submits `{ rating, comment }`
-- `GET /api/jobs/:id/payment` — owning client reads server-derived terms/status
-- `POST /api/jobs/:id/payments/verify` and `/reconcile` — body must contain only `{ txHash }`
+## Verification and live handoff
 
-Job state is `open → hired → accepted → submitted → reviewed → paid` (payment is also allowed after submission, before review). Ownership, role, deadline, transition, string-size, JSON-size, content-type, and URL checks are server-side. Job descriptions, parameters, results, and reviews are untrusted data and are only rendered as inert text; they are never treated as model or operator instructions.
+```sh
+bun test tests
+bun run typecheck
+bun run build
+```
 
-## Base settlement
+Typecheck covers both the frontend and the Bun server. The shared synthetic envelope fixture is `tests/fixtures/engine-envelope.json`. Tests cover local auth, forged wallets, cross-wallet engine denial, body allow-lists, same-origin mutations, envelope bytes, upstream failure, unpaid redaction, pending/restart reconciliation and v4 client states.
 
-The only enabled settlement network is Base Mainnet (chain ID `8453`). Payment configuration is centralized in `src/settlement/config.ts`:
+For a live rehearsal, record accepted client/engine SHAs and verify JSON API routing first. Sign in with a separate client wallet, submit one request and record its job/card IDs. Approve the triage card in the private engine, stage the finished MP4, inspect its hash and click Release. Confirm API and finalized Arkiv reads reveal no file reference. Review exact terms and submit the one approved Base transfer. Reload during verification and confirm no second payment is requested. Independently fetch the resulting Swarm file, match its SHA-256, and read the finalized Arkiv records with a fresh reader. Record the transaction, references and actual results. No automated test sends funds or performs this rehearsal.
 
-- token: USDC
-- address: `0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48`
-- decimals: `6`
-- explorer: `https://basescan.org`
-- required confirmations: `2`
+## Legacy development lane
 
-The wallet signs a direct `transfer(agentPayout, exactBudget)` call with zero native value. There is no escrow or native-ETH payment. The server reloads the job and agent profile, derives chain/token/sender/recipient/exact amount, and accepts only a successful receipt on chain 8453 with enough confirmations, direct token target, matching calldata, matching sender and exactly one matching `Transfer` log. A transaction hash is reserved to one job and each job to one hash before RPC verification. RPC failures remain pending; a browser response cannot mark a job paid.
-
-Important live prerequisite: independently confirm that the configured USDC address is the intended Base Mainnet token for your deployment and that it reports `USDC`/6 decimals. The adapter performs that metadata check before signing, so a mismatch fails closed.
-
-## Security and limitations
-
-- No keys, seed phrases, wallet secrets, RPC credentials, or database credentials belong in the repository or `VITE_` variables.
-- The development memory store is single-process, non-durable, and unsuitable for production concurrency.
-- Production uniqueness needs durable unique constraints on job ID and transaction hash at `HIRING_DESK_UPSTREAM`.
-- Direct payment has no escrow, dispute resolution, refund automation, moderation, or agent execution sandbox.
-- Artifact references are credential-free HTTPS URLs. Fetching/scanning artifacts is outside this MVP.
-- Public RPCs can rate-limit. Payment remains pending on transport failure.
-
-See [architecture](docs/ARCHITECTURE.md), [security review](docs/SECURITY-REVIEW.md), and [historical provenance](docs/PROVENANCE.md).
+`HIRING_DESK_DEV_MEMORY=1 bun run dev:server` selects the separate, explicitly ephemeral old marketplace for local testing. Use the development frontend's `?mvp=1` view. Production and memory flags cannot be combined. Memory data disappears on restart and uses the earlier lifecycle; it does not implement v4 private Release or durable pay-to-unlock. Do not use it to demonstrate live acceptance.

@@ -19,7 +19,10 @@ export class AuthService {
   constructor(private now: () => number = Date.now, private secureCookies = false) {}
 
   challenge(input: { address?: unknown; role?: unknown }) {
+    for (const [key, challenge] of this.challenges) if (challenge.expiresAt <= this.now() || challenge.used) this.challenges.delete(key)
+    for (const [key, session] of this.sessions) if (session.expiresAt <= this.now()) this.sessions.delete(key)
     const address = normalizeWallet(input.address)
+    if (this.challenges.size >= 1000 || [...this.challenges.values()].filter(c => c.address === address).length >= 5) throw Object.assign(new Error('Too many sign-in challenges; try again after expiry'), { status: 429 })
     if (!roles.has(input.role as MarketplaceRole)) throw new Error('Role must be client or agent')
     const role = input.role as MarketplaceRole
     const nonce = token()
@@ -40,6 +43,7 @@ export class AuthService {
     challenge.used = true
     if (challenge.address !== address || challenge.role !== role || !roles.has(role)) throw new Error('Challenge binding mismatch')
     if (!await verifyMessage({ address, message: challenge.message, signature })) throw new Error('Invalid wallet signature')
+    if (this.sessions.size >= 10000) throw Object.assign(new Error('Sign-in capacity reached; try again shortly'), { status: 429 })
     const id = token()
     const session: Session = { id, address, role, expiresAt: this.now() + 15 * 60_000 }
     this.sessions.set(id, session)

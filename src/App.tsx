@@ -1,7 +1,7 @@
 /** Generated in Arc Studio. */
 import { lazy, Suspense } from 'react'
 import { ConnectKitButton } from 'connectkit'
-import { DeskPaymentPage } from '@/components/desk/DeskPaymentPage'
+import { MarketJobPage } from '@/components/desk/MarketJobPage'
 import { readJobRef } from '@/lib/route'
 import { HiringBoard } from '@/components/lifecycle/HiringBoard'
 import { LegacyHiringBoard } from '@/components/lifecycle/LegacyHiringBoard'
@@ -35,7 +35,7 @@ export default function App() {
             <DemoPage />
           </Suspense>
         ) : legacyMvp ? <LegacyHiringBoard /> : jobRef ? (
-          <DeskPaymentPage key={jobRef} jobRef={jobRef} />
+          <MarketJobPage key={jobRef} jobRef={jobRef} />
         ) : (
           <HiringBoard />
         )}
