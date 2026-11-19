@@ -38,7 +38,7 @@ const BASE_MAINNET: SettlementNetworkConfig = {
   name: 'Base Mainnet',
   rpcUrl: 'https://mainnet.base.org',
   explorerBase: 'https://basescan.org',
-  token: { symbol: 'USDC', address: getAddress('0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'), decimals: 6 },
+  token: { symbol: 'USDC', address: getAddress('0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'), decimals: 6 },
   nativeDecimals: 18,
   requiredConfirmations: 2,
 }

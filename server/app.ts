@@ -6,6 +6,34 @@ const TX_HASH = /^0x[0-9a-fA-F]{64}$/
 const noStore = { 'cache-control': 'no-store', 'content-type': 'application/json; charset=utf-8' }
 const json = (body: unknown, status = 200, headers: HeadersInit = {}) => new Response(JSON.stringify(body), { status, headers: { ...noStore, ...headers } })
 
+/** Never pass an unpaid result or download reference from an older upstream contract. */
+export function hideUnpaidDelivery(path: string, body: unknown): unknown {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return body
+  const data = body as Record<string, unknown>
+  if (path === '/jobs' && Array.isArray(data.jobs)) {
+    data.jobs = data.jobs.map(item => stripDelivery(item))
+    return data
+  }
+  if (!/^\/jobs\/[^/]+(?:\/(?:hire|claim|result|reviews|payment|payments\/(?:verify|reconcile)))?$/.test(path)) return body
+  // The upstream owns these durable states. A submitted hash alone never unlocks a link.
+  const paidJob = data.job && typeof data.job === 'object' && !Array.isArray(data.job) && (data.job as Record<string, unknown>).state === 'paid'
+  return data.state === 'confirmed' || paidJob ? data : stripDelivery(data)
+}
+
+function stripDelivery(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripDelivery)
+  if (!value || typeof value !== 'object') return value
+  const source = value as Record<string, unknown>
+  const out: Record<string, unknown> = {}
+  for (const [key, item] of Object.entries(source)) {
+    if (key === 'result') { out[key] = null; continue }
+    if (['delivery', 'observations', 'publicRef', 'publicDestination', 'artifactUrl', 'downloadUrl', 'fileUrl', 'swarmRef'].includes(key)) continue
+    if (key === 'deliverableUrl') { out[key] = ''; continue }
+    out[key] = stripDelivery(item)
+  }
+  return out
+}
+
 async function readJson(request: Request, max = 32_000): Promise<Record<string, unknown>> {
   const reader = request.body?.getReader(); let size = 0; const chunks: Uint8Array[] = []
   if (reader) for (;;) {
@@ -60,12 +88,12 @@ export function createMvpHandler(options: MvpHandlerOptions) {
       if (url.pathname === '/api/jobs' && request.method === 'GET') return json({ jobs: market.publicJobs(url.searchParams.get('q') ?? '') })
       if (url.pathname === '/api/jobs' && request.method === 'POST') return json({ job: market.createJob(requireSession(auth, request, 'client'), await readJson(request)) }, 201)
       const jobMatch = /^\/api\/jobs\/([^/]+)$/.exec(url.pathname)
-      if (jobMatch && request.method === 'GET') return json({ job: market.getJob(requireSession(auth, request), decodeURIComponent(jobMatch[1])) })
+      if (jobMatch && request.method === 'GET') return json({ job: market.visibleJob(requireSession(auth, request), decodeURIComponent(jobMatch[1])) })
       const actionMatch = /^\/api\/jobs\/([^/]+)\/(hire|claim|result|reviews)$/.exec(url.pathname)
       if (actionMatch && request.method === 'POST') {
         const session = requireSession(auth, request); const id = decodeURIComponent(actionMatch[1]); const body = actionMatch[2] === 'claim' ? {} : await readJson(request)
         const job = actionMatch[2] === 'hire' ? market.hire(session, id, body) : actionMatch[2] === 'claim' ? market.claim(session, id) : actionMatch[2] === 'result' ? market.submit(session, id, body) : market.review(session, id, body)
-        return json({ job })
+        return json({ job: market.visibleJob(session, id) })
       }
       const paymentMatch = /^\/api\/jobs\/([^/]+)\/payment$/.exec(url.pathname)
       if (paymentMatch && request.method === 'GET') {
@@ -82,7 +110,7 @@ export function createMvpHandler(options: MvpHandlerOptions) {
         if (Object.keys(body).length !== 1 || typeof body.txHash !== 'string' || !TX_HASH.test(body.txHash)) throw Object.assign(new Error('Expected only a valid txHash'), { status: 400 })
         const id = decodeURIComponent(verifyMatch[1]); const terms = market.terms(session, id)
         const outcome = await market.verifyPayment(session, id, body.txHash as Hash, options.verifyPayment)
-        if (outcome.status === 'confirmed') return json({ state: 'confirmed', terms, receipt: { txHash: outcome.txHash, sender: terms.clientAddress, recipient: terms.recipientAddress, tokenAddress: terms.tokenAddress, chainId: terms.chainId, amountBaseUnits: terms.amountBaseUnits, blockNumber: outcome.blockNumber, explorerUrl: outcome.explorerUrl } })
+        if (outcome.status === 'confirmed') return json({ state: 'confirmed', terms: market.terms(session, id), receipt: { txHash: outcome.txHash, sender: terms.clientAddress, recipient: terms.recipientAddress, tokenAddress: terms.tokenAddress, chainId: terms.chainId, amountBaseUnits: terms.amountBaseUnits, blockNumber: outcome.blockNumber, explorerUrl: outcome.explorerUrl } })
         if (outcome.status === 'pending') return json({ state: 'pending', terms, ...outcome })
         return json({ state: 'failed', terms, ...outcome }, 422)
       }
@@ -120,7 +148,7 @@ export function createHandler(upstream: string, requestFetch: typeof fetch = fet
       if (cookie && (path.startsWith('/auth/') || path === '/profile' || path.startsWith('/jobs'))) headers.set('cookie', cookie)
       const response = await requestFetch(`${base.href.replace(/\/$/, '')}${path}${url.search}`, { method: request.method, headers, body, redirect: 'error', signal: AbortSignal.timeout(10_000) })
       const responseHeaders: HeadersInit = {}; const setCookie = response.headers.get('set-cookie'); if (setCookie) responseHeaders['set-cookie'] = setCookie
-      return json(await response.json(), response.status, responseHeaders)
+      return json(hideUnpaidDelivery(path, await response.json()), response.status, responseHeaders)
     } catch { return json({ error: 'Hiring Desk upstream unavailable' }, 502) }
   }
 }

@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { HiringBoard } from '@/components/lifecycle/HiringBoard'
+import { JobOverview } from '@/components/desk/JobOverview'
+import type { JobRequest } from '@/types/marketplace'
 import { LifecycleWallet, validatePublicationIntent, type InjectedProvider, type PublicationIntent } from '@/lib/lifecycle-wallet'
 import { createLifecycleReader, validDraft, validateIntentForRequest } from '@/lib/lifecycle-api'
 import { readPendingPublication, writePendingPublication, reconcilePendingPublication } from '@/lib/lifecycle-pending'
@@ -32,7 +34,15 @@ describe('public lifecycle reader and UI', () => {
     }
   })
   test('validates exact integer budgets and future deadlines', () => { const d = { brief: 'public task', skill: 'research', budgetAtomic: '1000000', deadline: Math.floor(Date.now() / 1000) + 3600 }; expect(validDraft(d)).toBe(true); for (const amount of ['1.2', '-1', '0', '01', '1e6']) expect(validDraft({ ...d, budgetAtomic: amount })).toBe(false); expect(validDraft({ ...d, deadline: 1 })).toBe(false) })
-  test('home exposes public discovery and explicit wallet roles without invented success', () => { const html = renderToStaticMarkup(<HiringBoard />); expect(html).toContain('Available jobs'); expect(html).toContain('Agent directory'); expect(html).toContain('Sign in as client'); expect(html).toContain('Sign in as agent'); expect(html).not.toContain('Job successfully posted') })
+  test('home labels sample and shows an unavailable hire action until exact terms exist', () => { const html = renderToStaticMarkup(<HiringBoard />); expect(html).toContain('dated sample'); expect(html).toContain('See brief requirements'); expect(html).toContain('Signing in moves no funds'); expect(html).not.toContain('Send hire request</button>') })
+  test('job overview never renders an unpaid result even if a legacy API sends it', () => {
+    const job = { id: 'j1', title: 'Anime reel', description: 'Client brief', skill: 'anime', state: 'submitted', result: { contentType: 'text/plain', content: 'secret file bytes', artifactUrl: 'https://example.test/secret.mp4', submittedAt: 1 } } as JobRequest
+    const html = renderToStaticMarkup(<JobOverview job={job} />)
+    expect(html).toContain('Client brief')
+    expect(html).toContain('The result stays locked')
+    expect(html).not.toContain('secret file bytes')
+    expect(html).not.toContain('secret.mp4')
+  })
   test('canonical Arkiv refs survive encoded links; rejects traversal and nested paths', () => { expect(readJobRef({ pathname: '/pay/arkiv%3A291%2Fjob', search: '' })).toBe('arkiv:291/job'); expect(readJobRef({ pathname: '/pay/..%2Fjob', search: '' })).toBeNull(); expect(readJobRef({ pathname: '/pay/a%2Fb%2Fc', search: '' })).toBeNull() })
 })
 

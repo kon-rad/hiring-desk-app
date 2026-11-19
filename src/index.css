@@ -13,3 +13,72 @@ body {
   background: #F5F2EC;
   color: #12203A;
 }
+
+.cyba-shell { min-height: 100dvh; background: #090e26; color: #f0f3ff; font-family: 'Avenir Next', Avenir, sans-serif; }
+.cyba-home, .cyba-hero, .cyba-hero-copy, .cyba-hero-art, .cyba-agent-detail, .cyba-brief-card { min-width: 0; }
+.cyba-header, .cyba-nav, .cyba-main { width: min(100% - 40px, 1180px); margin-inline: auto; }
+.cyba-header { display: flex; justify-content: space-between; align-items: center; padding-top: 28px; }
+.cyba-wordmark, .cyba-home h2, .cyba-hero h2 { font-family: 'Avenir Next Condensed', 'Arial Narrow', sans-serif; letter-spacing: -.035em; }
+.cyba-wordmark { font-family: 'Avenir Next', Avenir, Arial, sans-serif; font-size: 27px; font-weight: 700; letter-spacing: -.02em; line-height: 1; }
+.cyba-eyebrow { margin: 0 0 8px; color: #68dfff; font-size: 11px; font-weight: 800; letter-spacing: .17em; text-transform: uppercase; }
+.cyba-nav { display: flex; gap: 26px; padding-block: 20px; font-size: 13px; color: #c8d1e8; }
+.cyba-nav a:hover, .cyba-text-link:hover { color: #68dfff; }
+.cyba-main { padding-bottom: 72px; }
+.cyba-hero { display: grid; grid-template-columns: 7fr 5fr; align-items: stretch; min-height: 520px; border-top: 1px solid #35415e; border-bottom: 1px solid #35415e; }
+.cyba-hero-copy { display: flex; flex-direction: column; justify-content: center; padding: 48px 8% 55px 0; }
+.cyba-hero h2 { margin: 0; font-size: clamp(58px, 7vw, 104px); font-weight: 800; line-height: .95; }
+.cyba-hero h2 em { color: #ffb779; font-style: normal; }
+.cyba-lead { max-width: 520px; margin: 28px 0 0; color: #c8d1e8; font-size: 17px; line-height: 1.6; }
+.cyba-actions { display: flex; flex-wrap: wrap; gap: 22px; align-items: center; margin-top: 32px; }
+.cyba-button { display: inline-flex; align-items: center; justify-content: center; gap: 14px; min-height: 47px; border: 1px solid #68dfff; border-radius: 5px; padding: 10px 20px; background: #68dfff; color: #09132b; font-weight: 800; font-size: 13px; cursor: pointer; }
+.cyba-button:hover:not(:disabled) { background: #a8f3ff; }
+.cyba-button:focus-visible, .cyba-shell a:focus-visible, .cyba-field:focus-visible { outline: 3px solid #ffb779; outline-offset: 3px; }
+.cyba-button-outline { background: transparent; color: #68dfff; }
+.cyba-disabled { opacity: .5; cursor: not-allowed; }
+.cyba-text-link { display: inline-flex; gap: 5px; align-items: center; min-width: 0; overflow-wrap: anywhere; color: #a895e5; font-size: 13px; font-weight: 700; text-decoration: underline; text-underline-offset: 4px; }
+.cyba-hero-art { position: relative; overflow: hidden; background: #111b3d; }
+.cyba-hero-art img { width: 100%; height: 100%; object-fit: cover; filter: saturate(.8); }
+.cyba-art-caption { position: absolute; bottom: 0; inset-inline: 0; display: flex; justify-content: space-between; padding: 14px 18px; background: #090e26df; font-size: 11px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.cyba-section { padding: 42px 0; border-bottom: 1px solid #35415e; }
+.cyba-home h2 { margin: 0 0 12px; font-size: clamp(30px, 4vw, 48px); font-weight: 800; line-height: 1.1; }
+.cyba-home p { line-height: 1.55; }
+.cyba-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 36px; }
+.cyba-steps div { display: grid; gap: 7px; }
+.cyba-steps span { color: #68dfff; font-family: monospace; font-size: 12px; }
+.cyba-steps strong { font-size: 17px; }
+.cyba-steps p, .cyba-muted, .cyba-identity p, .cyba-signin p { margin: 0; color: #b8c4df; font-size: 14px; }
+.cyba-agent, .cyba-brief { display: grid; grid-template-columns: 4fr 8fr; gap: 36px; }
+.cyba-agent-detail { border-left: 3px solid #68dfff; padding-left: 24px; }
+.cyba-agent-detail p { margin: 0 0 14px; }
+.cyba-mono { overflow-wrap: anywhere; color: #a895e5; font-family: ui-monospace, monospace; font-size: 12px; }
+.cyba-brief-card { display: grid; gap: 10px; align-content: start; padding: 28px; background: #111b3d; }
+.cyba-brief-card label { font-weight: 700; font-size: 13px; }
+.cyba-field { width: 100%; min-height: 44px; margin-bottom: 10px; border: 1px solid #495779; border-radius: 4px; padding: 12px; background: #0c1533; color: #f0f3ff; }
+.cyba-field::placeholder { color: #a5b2cc; }
+.cyba-terms { display: flex; gap: 11px; align-items: start; color: #ffb779; }
+.cyba-terms p { margin: 0; font-size: 13px; }
+.cyba-identity, .cyba-signin { display: flex; align-items: start; gap: 20px; }
+.cyba-identity > div, .cyba-signin > div { flex: 1; }
+.cyba-identity h2, .cyba-signin h2 { font-size: 27px; }
+.cyba-identity a { display: inline-flex; align-items: center; gap: 4px; color: #a895e5; font-size: 13px; text-decoration: underline; }
+.cyba-error { color: #ffb779 !important; }
+.cyba-footer { padding-top: 40px; text-align: center; color: #a5b2cc; font-size: 12px; }
+.cyba-job-page { display: grid; grid-template-columns: minmax(0, 8fr) minmax(300px, 4fr); gap: 30px; border-top: 1px solid #35415e; padding-top: 32px; }
+.cyba-job-overview { min-width: 0; }
+.cyba-job-overview h2 { margin: 0; font-family: 'Avenir Next Condensed', 'Arial Narrow', sans-serif; font-size: clamp(36px, 5vw, 64px); font-weight: 800; line-height: 1; }
+.cyba-state { color: #ffb779; font-weight: 700; text-transform: capitalize; }
+.cyba-spine { margin: 35px 0; padding: 0; list-style: none; border-left: 2px solid #465270; }
+.cyba-spine li { display: flex; align-items: center; gap: 14px; margin: 0 0 0 -7px; padding: 0 0 25px; color: #aab8d3; font-size: 14px; }
+.cyba-spine li:last-child { padding-bottom: 0; }
+.cyba-spine li[data-complete="true"] { color: #f0f3ff; font-weight: 700; }
+.cyba-spine-dot { flex: 0 0 12px; height: 12px; border: 2px solid #8b99b8; border-radius: 50%; background: #090e26; }
+.cyba-spine li[data-complete="true"] .cyba-spine-dot { border-color: #68dfff; background: #68dfff; }
+.cyba-job-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; border-top: 1px solid #35415e; padding-top: 24px; }
+.cyba-job-grid h3 { margin: 0 0 12px; color: #68dfff; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; }
+.cyba-job-grid p { margin: 0 0 10px; color: #c8d1e8; line-height: 1.6; }
+.cyba-prewrap { white-space: pre-wrap; overflow-wrap: anywhere; }
+.cyba-payment-rail { min-width: 0; }
+.cyba-payment-rail > div { color: #12203a; }
+@media (max-width: 720px) { .cyba-header, .cyba-nav, .cyba-main { width: min(100% - 32px, 1180px); } .cyba-header { gap: 8px; } .cyba-header > div:first-child { min-width: 0; } .cyba-hero { grid-template-columns: minmax(0, 1fr); } .cyba-hero-copy { padding: 38px 0; } .cyba-hero-art { min-height: 280px; } .cyba-steps, .cyba-agent, .cyba-brief { grid-template-columns: minmax(0, 1fr); gap: 24px; } .cyba-identity, .cyba-signin { flex-wrap: wrap; } }
+@media (max-width: 720px) { .cyba-job-page, .cyba-job-grid { grid-template-columns: 1fr; } .cyba-payment-rail { grid-row: 1; } }
+@media (prefers-reduced-motion: reduce) { .cyba-shell *, .cyba-shell *::before, .cyba-shell *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; } }

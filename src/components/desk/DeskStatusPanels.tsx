@@ -89,6 +89,7 @@ export function PaidPanel({ view }: { view: Extract<DeskView, { kind: 'confirmed
   const { terms, receipt } = view
   const config = getNetworkConfig(terms.chainId)
   const amount = formatBaseUnitsPadded(terms.chainId, BigInt(receipt.amountBaseUnits))
+  const downloadUrl = (() => { try { const url = new URL(terms.deliverableUrl); return url.protocol === 'https:' && !url.username && !url.password ? url.href : null } catch { return null } })()
   return (
     <Card>
       <div className="flex items-start gap-3" role="status" aria-live="polite">
@@ -117,6 +118,7 @@ export function PaidPanel({ view }: { view: Extract<DeskView, { kind: 'confirmed
           {config.name} <span className="text-ink/55">· chain ID {receipt.chainId}</span>
         </Row>
       </dl>
+      {downloadUrl ? <a href={downloadUrl} target="_blank" rel="noopener noreferrer" className="mt-5 inline-flex min-h-11 items-center rounded-2xl bg-emerald-700 px-4 text-sm font-semibold text-white">Download delivered file</a> : <p className="mt-5 text-sm" role="status">Payment verified. Preparing your download. Refresh this page shortly.</p>}
       <a
         href={explorerTxUrl(config, receipt.txHash)}
         target="_blank"

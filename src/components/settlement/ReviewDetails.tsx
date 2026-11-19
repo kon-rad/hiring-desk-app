@@ -1,13 +1,13 @@
 /** Generated in Arc Studio. */
 import { TokenUSDC } from '@web3icons/react'
-import { ExternalLink } from 'lucide-react'
 import { explorerAddressUrl, formatBaseUnitsPadded, getNetworkConfig } from '@/settlement'
 import { FullValue, Row } from './ui'
 import type { SettlementJob } from './types'
 
 export function isHttpsUrl(value: string): boolean {
   try {
-    return new URL(value).protocol === 'https:'
+    const url = new URL(value)
+    return url.protocol === 'https:' && !url.username && !url.password
   } catch {
     return false
   }
@@ -27,7 +27,6 @@ interface ReviewDetailsProps {
 export function ReviewDetails({ job, walletAddress, balance, balanceError = false }: ReviewDetailsProps) {
   const config = getNetworkConfig(job.chainId)
   const amount = formatBaseUnitsPadded(job.chainId, job.amountBaseUnits)
-  const deliverableOk = isHttpsUrl(job.deliverableUrl)
 
   return (
     <>
@@ -46,13 +45,7 @@ export function ReviewDetails({ job, walletAddress, balance, balanceError = fals
           <span className="font-semibold">{job.jobReference}</span>
         </Row>
         <Row label="Deliverable">
-          {deliverableOk ? (
-            <a href={job.deliverableUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-start gap-1.5 break-all font-medium text-navy underline underline-offset-2">
-              {job.deliverableUrl} <ExternalLink size={14} className="mt-1 shrink-0" />
-            </a>
-          ) : (
-            <span className="text-red-700">No valid https link</span>
-          )}
+          <span className="text-ink/70">Locked until this payment is verified</span>
         </Row>
         <Row label="Network">
           {config.name} <span className="text-ink/55">· chain ID {config.chainId}</span>
