@@ -1,2 +1,79 @@
-import {apiError,json,requirePrincipal} from '@/server/http';import{db,query}from'@/server/db';type C={params:Promise<{listingId:string}>}
-export async function POST(request:Request,{params}:C){const p=await requirePrincipal();if(!p)return apiError('Authentication required',401);const listingId=(await params).listingId;const b=await request.json();const title=String(b.title??'').trim(),description=String(b.description??'').trim(),key=String(b.idempotencyKey??'');const refs=b.attachmentRefs??[];if(!title||title.length>200||!description||description.length>10000||!/^[A-Za-z0-9_-]{8,120}$/.test(key)||!Array.isArray(refs)||refs.length>5||refs.some((x:unknown)=>typeof x!=='string'||x.length>2000||!/^https:\/\//.test(x)))return apiError('Invalid request or attachment references');const c=await db.connect();try{await c.query('BEGIN');const l=await c.query("SELECT l.*,a.name AS agent_name FROM cyba_listings l JOIN cyba_agents a ON a.id=l.agent_id WHERE l.id=$1 AND l.status='published'",[listingId]);if(!l.rowCount)throw new Error('Listing unavailable');const x=l.rows[0];const snap={listingId:x.id,listingName:x.name,agentName:x.agent_name,priceAtomic:String(x.price_atomic),payoutWallet:x.payout_wallet,ensName:x.ens_name,revision:x.revision};const r=await c.query('INSERT INTO cyba_requests(listing_id,requester_wallet,idempotency_key,title,description,attachment_refs,listing_snapshot) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(requester_wallet,idempotency_key) DO UPDATE SET idempotency_key=EXCLUDED.idempotency_key RETURNING *',[listingId,p.address.toLowerCase(),key,title,description,JSON.stringify(refs),JSON.stringify(snap)]);await c.query("INSERT INTO cyba_request_events(request_id,actor,state,idempotency_key) VALUES($1,$2,'submitted',$3) ON CONFLICT DO NOTHING",[r.rows[0].id,p.address.toLowerCase(),key+':submitted']);await c.query('COMMIT');return json({request:r.rows[0]},201)}catch(e){await c.query('ROLLBACK');return apiError(e instanceof Error?e.message:'Request failed',400)}finally{c.release()}}
+import { apiError, HttpError, json, requirePrincipal } from '@/server/http'
+import { db } from '@/server/db'
+import { matchesRequestPayload } from '@/server/request-idempotency'
+
+type Context = { params: Promise<{ listingId: string }> }
+
+export async function POST(request: Request, { params }: Context) {
+  const principal = await requirePrincipal()
+  if (!principal) return apiError('Authentication required', 401)
+
+  const listingId = (await params).listingId
+  const body = await request.json()
+  const title = String(body.title ?? '').trim()
+  const description = String(body.description ?? '').trim()
+  const idempotencyKey = String(body.idempotencyKey ?? '')
+  const attachmentRefs = body.attachmentRefs ?? []
+  if (
+    !title || title.length > 200 || !description || description.length > 10000
+    || !/^[A-Za-z0-9_-]{8,120}$/.test(idempotencyKey)
+    || !Array.isArray(attachmentRefs) || attachmentRefs.length > 5
+    || attachmentRefs.some((value: unknown) => typeof value !== 'string' || value.length > 2000 || !/^https:\/\//.test(value))
+  ) return apiError('Invalid request or attachment references')
+
+  const submitted = { listingId, title, description, attachmentRefs: attachmentRefs as string[] }
+  const client = await db.connect()
+  try {
+    await client.query('BEGIN')
+    const listing = await client.query(
+      "SELECT l.*,a.name AS agent_name FROM cyba_listings l JOIN cyba_agents a ON a.id=l.agent_id WHERE l.id=$1 AND l.status='published'",
+      [listingId],
+    )
+    if (!listing.rowCount) throw new Error('Listing unavailable')
+
+    const terms = listing.rows[0]
+    const listingSnapshot = {
+      listingId: terms.id,
+      listingName: terms.name,
+      agentName: terms.agent_name,
+      priceAtomic: String(terms.price_atomic),
+      payoutWallet: terms.payout_wallet,
+      ensName: terms.ens_name,
+      revision: terms.revision,
+    }
+
+    const inserted = await client.query(
+      `INSERT INTO cyba_requests(listing_id,requester_wallet,idempotency_key,title,description,attachment_refs,listing_snapshot)
+       VALUES($1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT(requester_wallet,idempotency_key) DO NOTHING
+       RETURNING *`,
+      [listingId, principal.address.toLowerCase(), idempotencyKey, title, description, JSON.stringify(attachmentRefs), JSON.stringify(listingSnapshot)],
+    )
+
+    let row = inserted.rows[0]
+    const created = Boolean(row)
+    if (!row) {
+      const previous = await client.query(
+        'SELECT * FROM cyba_requests WHERE requester_wallet=$1 AND idempotency_key=$2 FOR UPDATE',
+        [principal.address.toLowerCase(), idempotencyKey],
+      )
+      row = previous.rows[0]
+      if (!row) throw new Error('Request idempotency record could not be loaded')
+      if (!matchesRequestPayload(row, submitted)) {
+        throw new HttpError('This idempotency key was already used with a different request payload.', 409)
+      }
+    }
+
+    await client.query(
+      "INSERT INTO cyba_request_events(request_id,actor,state,idempotency_key) VALUES($1,$2,'submitted',$3) ON CONFLICT DO NOTHING",
+      [row.id, principal.address.toLowerCase(), `${idempotencyKey}:submitted`],
+    )
+    await client.query('COMMIT')
+    return json({ request: row }, created ? 201 : 200)
+  } catch (error) {
+    await client.query('ROLLBACK')
+    return apiError(error instanceof HttpError ? error.message : error instanceof Error ? error.message : 'Request failed', error instanceof HttpError ? error.status : 400)
+  } finally {
+    client.release()
+  }
+}
