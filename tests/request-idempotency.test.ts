@@ -25,6 +25,13 @@ describe('request idempotency payload matching', () => {
     expect(matchesRequestPayload({ ...existing, listing_id: uuid }, { ...submitted, listingId: uuid.toUpperCase() })).toBe(true)
   })
 
+  test('treats PostgreSQL UUID spellings with braces or omitted hyphens as equivalent', () => {
+    const uuid = '123e4567-e89b-12d3-a456-426614174000'
+    for (const spelling of ['123e4567e89b12d3a456426614174000', `{${uuid}}`]) {
+      expect(matchesRequestPayload({ ...existing, listing_id: uuid }, { ...submitted, listingId: spelling })).toBe(true)
+    }
+  })
+
   test.each([
     ['listing', { ...submitted, listingId: 'listing-2' }],
     ['title', { ...submitted, title: 'Different title' }],
