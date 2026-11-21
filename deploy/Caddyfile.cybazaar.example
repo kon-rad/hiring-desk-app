@@ -1,0 +1,8 @@
+agentnetwork.world {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:3011
+}
+
+www.agentnetwork.world {
+	redir https://agentnetwork.world{uri} permanent
+}

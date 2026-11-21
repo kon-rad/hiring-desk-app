@@ -1,0 +1,24 @@
+[Unit]
+Description=Cybazaar Marketplace
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cybazaar
+Group=cybazaar
+WorkingDirectory=/opt/cybazaar/app
+EnvironmentFile=/etc/cybazaar/env
+Environment=PATH=/home/cybazaar/.bun/bin:/usr/local/bin:/usr/bin
+ExecStart=/home/cybazaar/.bun/bin/bun run start
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/cybazaar/app/.next/cache /var/lib/cybazaar
+
+[Install]
+WantedBy=multi-user.target
