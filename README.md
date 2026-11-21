@@ -54,6 +54,6 @@ See the in-app guide at `/docs/agents` and the installable skill at `.agents/ski
 
 ## Hiring Desk boundary
 
-Second Brain is one provider integration. Cybazaar grants the integration only the approved listing UUIDs. The Hiring Desk polls those requests and stores an operational copy; accepting creates one unassigned, ordinary Kanban ticket. Operator decisions return to Cybazaar through an idempotent outbox. Other providers can build their own integrations without using Second Brain.
+Second Brain is one provider integration. Cybazaar grants the integration only the approved listing UUIDs. The opaque polling cursor is bound to that grant set; changing grants restarts pagination so older requests for newly granted listings are included. Every poll also checks current active grants. The Hiring Desk stores an operational copy; accepting creates one unassigned, ordinary Kanban ticket. Operator decisions return to Cybazaar through an idempotent outbox. Other providers can build their own integrations without using Second Brain.
 
 Client titles, briefs and attachment references are untrusted. The marketplace accepts up to five HTTPS references and never fetches them. Kanban tickets are created only after an operator accepts the request. Work dispatch follows the existing manual board workflow.

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
+import { encodeIntegrationCursor, listingGrantFingerprint } from '../src/server/integration-cursor'
 
 const wallet = '0x1111111111111111111111111111111111111111'
 const listingId = '123e4567-e89b-12d3-a456-426614174000'
@@ -14,6 +15,11 @@ let state: {
   listingPublished: boolean
   conflictInsert: boolean
   queries: string[]
+  integrationAuthorized: boolean
+  listingGrants: string[]
+  pollRows: Record<string, unknown>[]
+  pollArgs: unknown[] | null
+  pollSql: string
 }
 
 const existingRequest = () => ({
@@ -49,20 +55,45 @@ const client = {
   release() {},
 }
 
-mock.module('@/server/db', () => ({ db: { connect: async () => client } }))
+async function query(sql: string, values?: unknown[]) {
+  state.queries.push(sql)
+  if (sql.includes('SELECT listing_ids FROM cyba_integrations')) {
+    return { rows: state.integrationAuthorized ? [{ listing_ids: state.listingGrants }] : [], rowCount: state.integrationAuthorized ? 1 : 0 }
+  }
+  if (sql.includes('SELECT r.id,r.requester_wallet')) {
+    state.pollArgs = values ?? null
+    state.pollSql = sql
+    return { rows: state.pollRows, rowCount: state.pollRows.length }
+  }
+  throw new Error(`Unexpected database query in request route test: ${sql}`)
+}
+
+mock.module('@/server/db', () => ({ db: { connect: async () => client }, query }))
 mock.module('@/server/http', () => ({
   apiError: (message: string, status = 400) => Response.json({ error: { message } }, { status }),
   json: (body: unknown, status = 200) => Response.json(body, { status }),
   requirePrincipal: async () => ({ address: wallet }),
+  integrationForRequest: async () => state.integrationAuthorized ? 'argo-secondbrain' : null,
   HttpError: class HttpError extends Error {
     constructor(message: string, public readonly status: number) { super(message) }
   },
 }))
 
 const { POST } = await import('../src/app/api/v1/listings/[listingId]/requests/route')
+const { GET: pollArgoRequests } = await import('../src/app/api/v1/integrations/argo/requests/route')
 
 beforeEach(() => {
-  state = { existing: null, listingPublished: true, conflictInsert: false, queries: [] }
+  state = {
+    existing: null,
+    listingPublished: true,
+    conflictInsert: false,
+    queries: [],
+    integrationAuthorized: true,
+    listingGrants: [listingId],
+    pollRows: [],
+    pollArgs: null,
+    pollSql: '',
+  }
 })
 afterEach(() => mock.restore())
 
@@ -110,5 +141,40 @@ describe('request route idempotency', () => {
 
     expect(response.status).toBe(200)
     expect(state.queries.filter((sql) => sql.includes('SELECT * FROM cyba_requests WHERE requester_wallet=$1 AND idempotency_key=$2 FOR UPDATE'))).toHaveLength(2)
+  })
+})
+
+describe('Argo poll route grant-cursor invalidation', () => {
+  test('resets an old cursor after a listing grant changes and returns the older new-grant request', async () => {
+    const previousGrant = listingGrantFingerprint('argo-secondbrain', [listingId])
+    const oldCursor = encodeIntegrationCursor({
+      updatedAt: '2026-11-20T00:00:00.000Z',
+      id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      grantFingerprint: previousGrant,
+    })
+    const oldRequest = {
+      id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      listing_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      updated_at: '2026-11-19T00:00:00.000Z',
+    }
+    state.listingGrants = [listingId, oldRequest.listing_id]
+    state.pollRows = [oldRequest]
+
+    const response = await pollArgoRequests(new Request(`http://localhost/api/v1/integrations/argo/requests?cursor=${oldCursor}`))
+    const payload = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(state.pollArgs?.[0]).toBeNull()
+    expect(payload.requests).toEqual([oldRequest])
+    expect(state.pollSql).toContain('i.enabled=true AND i.revoked_at IS NULL AND l.id=ANY(i.listing_ids)')
+  })
+
+  test('does not query requests after the integration credential is revoked', async () => {
+    state.integrationAuthorized = false
+
+    const response = await pollArgoRequests(new Request('http://localhost/api/v1/integrations/argo/requests'))
+
+    expect(response.status).toBe(401)
+    expect(state.pollSql).toBe('')
   })
 })
