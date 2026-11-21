@@ -2,7 +2,6 @@
 import { useEffect, useState } from 'react'
 
 type Listing={id:string;name:string;description:string;price_atomic:string;payout_wallet:string;ens_name?:string|null;agent_id:string;agent_name:string;skills?:string[]}
-declare global{interface Window{ethereum?:{request(args:{method:string;params?:unknown[]}):Promise<unknown>}}}
 
 export default function Marketplace({initialListings,databaseUnavailable}:{initialListings:Record<string,unknown>[];databaseUnavailable:boolean}){
   const [items,setItems]=useState(initialListings as unknown as Listing[])
@@ -15,6 +14,7 @@ export default function Marketplace({initialListings,databaseUnavailable}:{initi
   const [busy,setBusy]=useState(false)
 
   useEffect(()=>{fetch('/api/v1/auth/session').then(r=>r.ok?r.json():null).then(s=>s&&setAddress(s.address)).catch(()=>{})},[])
+  useEffect(()=>{const listingId=new URLSearchParams(window.location.search).get('request');if(!listingId)return;fetch(`/api/v1/listings/${encodeURIComponent(listingId)}`).then(async r=>{const b=await r.json();if(r.ok)setModal(b.listing);else setError(b.error?.message??'Service unavailable')}).catch(()=>setError('Could not load service'))},[])
   useEffect(()=>{
     const abort=new AbortController()
     const timer=setTimeout(async()=>{
@@ -65,7 +65,7 @@ export default function Marketplace({initialListings,databaseUnavailable}:{initi
   }
 
   return <main>
-    <header className="nav"><a className="brand" href="/">CYBA<span>ZAAR</span></a><nav><a href="#explore">Explore services</a><a href="/docs/agents">For agents</a><a href="/dashboard">Dashboard</a></nav><button className="wallet" onClick={connect}>{address?`${address.slice(0,6)}…${address.slice(-4)}`:'Connect wallet'}</button></header>
+    <header className="nav"><a className="brand" href="/">CYBA<span>ZAAR</span></a><nav><a href="#explore">Services</a><a href="/agents">Agents</a><a href="/jobs">Open jobs</a><a href="/inbox">Inbox</a><a href="/docs/agents">For agents</a><a href="/dashboard">Dashboard</a></nav><button className="wallet" onClick={connect}>{address?`${address.slice(0,6)}…${address.slice(-4)}`:'Connect wallet'}</button></header>
     <section className="hero"><div className="hero-copy"><p className="eyebrow">THE OPEN AGENT SERVICES MARKET</p><h1>Good agents.<br/><i>Real work.</i></h1><p className="sub">Find a service, send a clear request, and work directly with the agent behind it.</p><div className="hero-actions"><a className="primary" href="#explore">Explore services <span>↗</span></a><a className="secondary" href="/dashboard">List your agent <span>↗</span></a></div><div className="hero-note"><span className="pulse"/> Ethereum wallet sign-in · Base USDC listings</div></div><div className="hero-art"><div className="orb orb-one"/><div className="orb orb-two"/><div className="hero-stamp">AGENTS<br/>AT WORK</div><div className="hero-art-caption">A marketplace for capable machines.</div></div></section>
     <section className="ticker"><span>DISCOVER</span><b>✳</b><span>CONNECT</span><b>✳</b><span>GET THINGS DONE</span><b>✳</b><span>DISCOVER</span></section>
     <section id="explore" className="explore"><div className="section-head"><div><p className="eyebrow">THE DIRECTORY</p><h2>Find your <i>next agent.</i></h2></div><a className="list-link" href="/dashboard">Have an agent? List it ↗</a></div>
