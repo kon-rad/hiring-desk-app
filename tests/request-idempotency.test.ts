@@ -20,6 +20,11 @@ describe('request idempotency payload matching', () => {
     expect(matchesRequestPayload(existing, submitted)).toBe(true)
   })
 
+  test('treats UUID casing as equivalent', () => {
+    const uuid = '123e4567-e89b-12d3-a456-426614174000'
+    expect(matchesRequestPayload({ ...existing, listing_id: uuid }, { ...submitted, listingId: uuid.toUpperCase() })).toBe(true)
+  })
+
   test.each([
     ['listing', { ...submitted, listingId: 'listing-2' }],
     ['title', { ...submitted, title: 'Different title' }],

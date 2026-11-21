@@ -25,48 +25,62 @@ export async function POST(request: Request, { params }: Context) {
   const client = await db.connect()
   try {
     await client.query('BEGIN')
-    const listing = await client.query(
-      "SELECT l.*,a.name AS agent_name FROM cyba_listings l JOIN cyba_agents a ON a.id=l.agent_id WHERE l.id=$1 AND l.status='published'",
-      [listingId],
+    const wallet = principal.address.toLowerCase()
+    const previous = await client.query(
+      'SELECT * FROM cyba_requests WHERE requester_wallet=$1 AND idempotency_key=$2 FOR UPDATE',
+      [wallet, idempotencyKey],
     )
-    if (!listing.rowCount) throw new Error('Listing unavailable')
+    let row = previous.rows[0]
+    let created = false
 
-    const terms = listing.rows[0]
-    const listingSnapshot = {
-      listingId: terms.id,
-      listingName: terms.name,
-      agentName: terms.agent_name,
-      priceAtomic: String(terms.price_atomic),
-      payoutWallet: terms.payout_wallet,
-      ensName: terms.ens_name,
-      revision: terms.revision,
-    }
-
-    const inserted = await client.query(
-      `INSERT INTO cyba_requests(listing_id,requester_wallet,idempotency_key,title,description,attachment_refs,listing_snapshot)
-       VALUES($1,$2,$3,$4,$5,$6,$7)
-       ON CONFLICT(requester_wallet,idempotency_key) DO NOTHING
-       RETURNING *`,
-      [listingId, principal.address.toLowerCase(), idempotencyKey, title, description, JSON.stringify(attachmentRefs), JSON.stringify(listingSnapshot)],
-    )
-
-    let row = inserted.rows[0]
-    const created = Boolean(row)
-    if (!row) {
-      const previous = await client.query(
-        'SELECT * FROM cyba_requests WHERE requester_wallet=$1 AND idempotency_key=$2 FOR UPDATE',
-        [principal.address.toLowerCase(), idempotencyKey],
-      )
-      row = previous.rows[0]
-      if (!row) throw new Error('Request idempotency record could not be loaded')
+    if (row) {
       if (!matchesRequestPayload(row, submitted)) {
         throw new HttpError('This idempotency key was already used with a different request payload.', 409)
+      }
+    } else {
+      const listing = await client.query(
+        "SELECT l.*,a.name AS agent_name FROM cyba_listings l JOIN cyba_agents a ON a.id=l.agent_id WHERE l.id=$1 AND l.status='published' FOR SHARE OF l",
+        [listingId],
+      )
+      if (!listing.rowCount) throw new Error('Listing unavailable')
+
+      const terms = listing.rows[0]
+      const listingSnapshot = {
+        listingId: terms.id,
+        listingName: terms.name,
+        agentName: terms.agent_name,
+        priceAtomic: String(terms.price_atomic),
+        payoutWallet: terms.payout_wallet,
+        ensName: terms.ens_name,
+        revision: terms.revision,
+      }
+
+      const inserted = await client.query(
+        `INSERT INTO cyba_requests(listing_id,requester_wallet,idempotency_key,title,description,attachment_refs,listing_snapshot)
+         VALUES($1,$2,$3,$4,$5,$6,$7)
+         ON CONFLICT(requester_wallet,idempotency_key) DO NOTHING
+         RETURNING *`,
+        [listingId, wallet, idempotencyKey, title, description, JSON.stringify(attachmentRefs), JSON.stringify(listingSnapshot)],
+      )
+
+      row = inserted.rows[0]
+      created = Boolean(row)
+      if (!row) {
+        const concurrent = await client.query(
+          'SELECT * FROM cyba_requests WHERE requester_wallet=$1 AND idempotency_key=$2 FOR UPDATE',
+          [wallet, idempotencyKey],
+        )
+        row = concurrent.rows[0]
+        if (!row) throw new Error('Request idempotency record could not be loaded')
+        if (!matchesRequestPayload(row, submitted)) {
+          throw new HttpError('This idempotency key was already used with a different request payload.', 409)
+        }
       }
     }
 
     await client.query(
       "INSERT INTO cyba_request_events(request_id,actor,state,idempotency_key) VALUES($1,$2,'submitted',$3) ON CONFLICT DO NOTHING",
-      [row.id, principal.address.toLowerCase(), `${idempotencyKey}:submitted`],
+      [row.id, wallet, `${idempotencyKey}:submitted`],
     )
     await client.query('COMMIT')
     return json({ request: row }, created ? 201 : 200)

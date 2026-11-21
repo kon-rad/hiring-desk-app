@@ -16,7 +16,7 @@ export function matchesRequestPayload(
   existing: ExistingRequestPayload,
   submitted: SubmittedRequestPayload,
 ): boolean {
-  return existing.listing_id === submitted.listingId
+  return existing.listing_id.toLowerCase() === submitted.listingId.toLowerCase()
     && existing.title === submitted.title
     && existing.description === submitted.description
     && Array.isArray(existing.attachment_refs)
