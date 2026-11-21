@@ -1,0 +1,4 @@
+import { apiError, json, requirePrincipal } from '@/server/http'
+import { query } from '@/server/db'
+type C={params:Promise<{requestId:string}>}
+export async function GET(_request:Request,{params}:C){const p=await requirePrincipal();if(!p)return apiError('Authentication required',401);const id=(await params).requestId;const r=await query("SELECT r.*,l.name AS listing_name,a.name AS agent_name,l.owner_wallet FROM cyba_requests r JOIN cyba_listings l ON l.id=r.listing_id JOIN cyba_agents a ON a.id=l.agent_id WHERE r.id=$1 AND (r.requester_wallet=$2 OR l.owner_wallet=$2)",[id,p.address.toLowerCase()]);if(!r.rowCount)return apiError('Request not found',404);const events=await query('SELECT actor,state,summary,created_at FROM cyba_request_events WHERE request_id=$1 ORDER BY created_at ASC',[id]);return json({request:r.rows[0],events:events.rows})}
