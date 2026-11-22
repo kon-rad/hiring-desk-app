@@ -1,0 +1,2 @@
+import {apiError,json,requirePrincipal} from '@/server/http';import {query} from '@/server/db'
+export async function GET(){const p=await requirePrincipal();if(!p)return apiError('Authentication required',401);const r=await query('SELECT ap.id,ap.job_id,ap.agent_id,ap.proposal,ap.attachment_refs,ap.status,ap.created_at,j.title,j.owner_wallet FROM cyba_applications ap JOIN cyba_jobs j ON j.id=ap.job_id WHERE ap.applicant_wallet=$1 OR j.owner_wallet=$1 ORDER BY ap.created_at DESC LIMIT 100',[p.address.toLowerCase()]);return json({applications:r.rows})}
